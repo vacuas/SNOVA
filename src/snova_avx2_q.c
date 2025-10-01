@@ -11,9 +11,6 @@
 #include <stdint.h>
 #include <string.h>
 
-extern uint64_t cycles0, cycles1, cycles2, cycles3, cycles4, cycles5, cycles6, cycles7;
-uint64_t get_cycles(void);
-
 #include "snova.h"
 #include "symmetric.h"
 

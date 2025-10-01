@@ -30,7 +30,7 @@ static void gen_ABQ(const char *abq_seed) {
 	shake256((uint8_t *)abq_seed, strlen(abq_seed), rng_out, m_SNOVA * alpha_SNOVA * (lsq_SNOVA + l_SNOVA));
 
 	convert_bytes_to_GF16s(rng_out, fixed_abq, 2 * m_SNOVA * alpha_SNOVA * lsq_SNOVA);
-	convert_bytes_to_GF16s(&rng_out[alpha_SNOVA * lsq_SNOVA], q12, 2 * m_SNOVA * alpha_SNOVA * l_SNOVA);
+	convert_bytes_to_GF16s(&rng_out[m_SNOVA * alpha_SNOVA * lsq_SNOVA], q12, 2 * m_SNOVA * alpha_SNOVA * l_SNOVA);
 
 	for (int pi = 0; pi < m_SNOVA; ++pi) {
 		for (int index = 0; index < alpha_SNOVA; ++index) {

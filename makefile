@@ -26,17 +26,27 @@ OPTIMISATION = 2
 valid_platform = avx2
 endif
 
-.PHONY: all clean $(subdirs)
+.PHONY: clean dist opt avx2 round2 $(subdirs)
 
-all: $(subdirs)
+dist:
+	make -C dist all
+
+opt: dist
+	make -C dist/opt all
+
+avx2: dist
+	OPT=AVX2 make -C dist/avx2 all
+
+round2: $(subdirs)
 
 $(subdirs): snova_config.src
 	mkdir -p $@/$(valid_platform)
 	grep -A 7 $@ snova_config.src > $@/$(valid_platform)/snova_config.mk
 	sed -i 's/OPTIMISATION=0/OPTIMISATION=$(OPTIMISATION)/' $@/$(valid_platform)/snova_config.mk
-	sh -c "cd $@/$(valid_platform) ; ln -s ../../src/* . || true"
+	sh -c "cd $@/$(valid_platform) ; ln -s ../../round2_src/* . || true"
 	$(MAKE) -C $@/$(valid_platform) clean_without_libsnovasym PQCgenKAT
 
 clean:
+	make -C dist clean
 	rm -rf $(subdirs)
 	$(MAKE) -C src/ clean_all

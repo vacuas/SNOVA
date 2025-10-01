@@ -39,16 +39,16 @@
 {
    Rejection sampling when no valid solution was found, Optimized q=16
    Memcheck:Cond
-   src:snova_opt_16.c:787
+   src:snova_opt_16.c:972
 }
 
 {
    Rejection sampling when no valid solution was found, Optimized q=16
    Memcheck:Cond
-   src:snova_opt_16.c:819
+   src:snova_opt_16.c:1004
 }
 
-# AVX2
+# AVX2, odd q
 
 {
    Rejection sampling of secret key
@@ -73,6 +73,15 @@
    Memcheck:Cond
    src:snova_avx2_q.c:1141
 }
+
+# AVX2, q=16
+
+{
+   Rejection sampling when no valid solution was found
+   Memcheck:Cond
+   src:snova_avx2_16l2.c:1548
+}
+
 
 # Only dependent on Public key
 
@@ -115,6 +124,22 @@
    Public function verify
    Memcheck:Cond
    fun:_snova_*verify
+}
+
+# q=16, l=2
+
+{
+   Public function verify
+   Memcheck:Value8
+   ...
+   fun:verify_signture_pkx_vtl
+}
+
+{
+   Public function verify
+   Memcheck:Cond
+   ...
+   fun:verify_signture_pkx_vtl
 }
 
 # Test tools

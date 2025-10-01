@@ -191,10 +191,17 @@ static void gen_S_array(void) {
 
 static int first_time = 1;
 
+#if FIXED_ABQ
+static void gen_fixed_ABQ(const char *abq_seed);
+#endif
+
 static void snova_init(void) {
 	first_time = 0;
 	init_gf_tables();
 	gen_S_array();
+#if FIXED_ABQ
+	gen_fixed_ABQ("SNOVA_ABQ");
+#endif
 }
 
 /**
@@ -501,6 +508,20 @@ static void gen_ABQ(gf_t *A, gf_t *Am, gf_t *Bm, gf_t *Q1m, gf_t *Q2m) {
 }
 
 /**
+ * Fix the ABQ to constants
+ */
+#if FIXED_ABQ
+uint8_t fixed_abq[2 * SNOVA_m * SNOVA_alpha * (SNOVA_l2 + SNOVA_l)] = {0};
+
+static void gen_fixed_ABQ(const char *abq_seed) {
+	uint8_t rng_out[2 * SNOVA_m * SNOVA_alpha * SNOVA_l2] = {0};
+
+	shake256(rng_out, 2 * SNOVA_m * SNOVA_alpha * SNOVA_l2, (uint8_t *)abq_seed, strlen(abq_seed));
+	convert_bytes_to_GF(fixed_abq, rng_out, 2 * SNOVA_m * SNOVA_alpha * (SNOVA_l2 + SNOVA_l));
+}
+#endif
+
+/**
  * Reference version of genkey.
  */
 int SNOVA_NAMESPACE(genkeys)(uint8_t *pk, uint8_t *sk, const uint8_t *seed) {
@@ -661,7 +682,11 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK *skx, uint8_t *sig, const uint8_t *d
 	gf_t *Q1 = Bm + SNOVA_m * SNOVA_alpha * SNOVA_l2;
 	gf_t *Q2 = Q1 + SNOVA_m * SNOVA_alpha * SNOVA_l2;
 
-	gen_ABQ(P_matrix + (SNOVA_m * (SNOVA_n * SNOVA_n - SNOVA_o * SNOVA_o)) * SNOVA_l2, Am, Bm, Q1, Q2);
+	gf_t *A = P_matrix + (SNOVA_o * (SNOVA_n * SNOVA_n - SNOVA_o * SNOVA_o)) * SNOVA_l2;
+#if FIXED_ABQ
+	memcpy(A, fixed_abq, sizeof(fixed_abq));
+#endif
+	gen_ABQ(A, Am, Bm, Q1, Q2);
 
 	// Calculate message has of size l^2o
 	gf_t hash_in_GF16[GF16_HASH];
@@ -950,6 +975,10 @@ int SNOVA_NAMESPACE(pk_expand)(expanded_PK *pkx, const uint8_t *pk) {
 	gf_t *B = A + SNOVA_o * SNOVA_alpha * SNOVA_l2;
 	gf_t *q1 = A + 2 * SNOVA_o * SNOVA_alpha * SNOVA_l2;
 	gf_t *q2 = q1 + SNOVA_o * SNOVA_alpha * SNOVA_l;
+
+#if FIXED_ABQ
+	memcpy(A, fixed_abq, sizeof(fixed_abq));
+#endif
 
 	for (size_t idx = 0; idx < SNOVA_o * SNOVA_alpha; idx++) {
 		be_invertible_by_add_aS(&(pkx->Am[idx * SNOVA_l2]), &A[idx * SNOVA_l2]);

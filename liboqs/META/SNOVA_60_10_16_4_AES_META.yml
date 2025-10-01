@@ -1,4 +1,4 @@
-name: SNOVA_60_10_4
+name: SNOVA_60_10_16_4_AES
 type: signature
 claimed-nist-level: 5
 length-public-key: 8016
@@ -23,7 +23,7 @@ implementations:
     signature_keypair: _snova_60_10_16_4_aes_opt_oqs_keypair
     signature_signature: _snova_60_10_16_4_aes_opt_oqs_sign
     signature_verify: _snova_60_10_16_4_aes_opt_oqs_verify
-    sources: LICENSE oddqsrc/snova.h liboqs/symmetric.h oddqsrc/snova_opt_16.c liboqs/snova_oqs.c
+    sources: LICENSE src/snova.h liboqs/symmetric.h src/snova_opt_16.c liboqs/snova_oqs.c
     large-stack-usage: false
     supported-platforms: all
   - name: avx2
@@ -33,7 +33,7 @@ implementations:
     signature_keypair: _snova_60_10_16_4_aes_avx2_oqs_keypair
     signature_signature: _snova_60_10_16_4_aes_avx2_oqs_sign
     signature_verify: _snova_60_10_16_4_aes_avx2_oqs_verify
-    sources: LICENSE oddqsrc/snova.h liboqs/symmetric.h oddqsrc/snova_opt_16.c liboqs/snova_oqs.c
+    sources: LICENSE src/snova.h liboqs/symmetric.h src/snova_opt_16.c liboqs/snova_oqs.c
     large-stack-usage: false
     supported_platforms:
       - architecture: x86_64
@@ -48,7 +48,7 @@ implementations:
     signature_keypair: _snova_60_10_16_4_aes_neon_oqs_keypair
     signature_signature: _snova_60_10_16_4_aes_neon_oqs_sign
     signature_verify: _snova_60_10_16_4_aes_neon_oqs_verify
-    sources: LICENSE oddqsrc/snova.h liboqs/symmetric.h oddqsrc/snova_opt_16.c liboqs/snova_oqs.c
+    sources: LICENSE src/snova.h liboqs/symmetric.h src/snova_opt_16.c liboqs/snova_oqs.c
     large-stack-usage: false
     supported_platforms:
       - architecture: arm_8

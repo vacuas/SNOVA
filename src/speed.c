@@ -184,7 +184,7 @@ int main(void) {
 
 	if (r == 0) {
 		if (test_n != 2048) {
-			printf(">");
+			printf("! ");
 		}
 		printf("%s & %d & %d", CRYPTO_ALGNAME, CRYPTO_PUBLICKEYBYTES, CRYPTO_BYTES);
 	} else {

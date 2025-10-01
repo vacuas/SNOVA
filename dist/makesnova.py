@@ -11,6 +11,10 @@ params = [
     [37, 8, 16, 4, False],
     [60, 10, 16, 4, False],
 
+    [43, 17, 16, 2, False],
+    [69, 25, 16, 2, False],
+    [99, 33, 16, 2, False],
+
     [24, 5, 23, 4, True],
     [37, 8, 19, 4, True],
     [60, 10, 23, 4, True],
@@ -18,6 +22,10 @@ params = [
     [24, 5, 16, 4, True],
     [37, 8, 16, 4, True],
     [60, 10, 16, 4, True],
+
+    [43, 17, 16, 2, True],
+    [69, 25, 16, 2, True],
+    [99, 33, 16, 2, True],
 ]
 
 ref_sources = [
@@ -36,7 +44,7 @@ ref_sources = [
     'symmetric_ref.c',
 ]
 
-source_dir = '../oddqsrc/'
+source_dir = '../src/'
 
 for target in ['ref', 'opt', 'avx2']:
     shutil.rmtree(target, ignore_errors=True)
@@ -60,7 +68,9 @@ for target in ['ref', 'opt', 'avx2']:
             shutil.copytree(source_dir, dirname)
             
         if target == 'opt':
+            os.remove(dirname + 'snova_avx2.c')
             os.remove(dirname + 'snova_avx2_q.c')
+            os.remove(dirname + 'snova_avx2_16l2.c')
             shutil.copy('README.opt', dirname + 'README.md')
             shutil.copy('Makefile.opt', dirname + 'Makefile')
 

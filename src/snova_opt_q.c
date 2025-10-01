@@ -1334,7 +1334,7 @@ int SNOVA_NAMESPACE(verify)(const expanded_PK *pkx, const uint8_t *sig, const ui
 	for (int mi = 0; mi < SNOVA_m; ++mi)
 		for (int a1 = 0; a1 < SNOVA_l; ++a1)
 			for (int i1 = 0; i1 < SNOVA_l; i1++)
-				for (int b1 = 0; b1 < SNOVA_l2; ++b1)
+				for (int b1 = 0; b1 < SNOVA_l; ++b1)
 					for (int j1 = 0; j1 < SNOVA_l; j1++)
 						sum_t1s[(mi * SNOVA_l + a1) * SNOVA_l * SNOVA_l2 + b1 * SNOVA_l2 + i1 * SNOVA_l + j1] =
 						    sum_t1[(mi * SNOVA_l + a1) * SNOVA_l * SNOVA_l2 + i1 * SNOVA_l2 + b1 * SNOVA_l + j1];

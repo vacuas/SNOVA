@@ -2,19 +2,26 @@ SNOVA
 =======
 This repository contains the latest official Reference, Optimized, and AVX2 implementations in C of the SNOVA signature scheme.
 
-There is only a single version of the source code of SNOVA for q=16. The parameter sets and the optimization level are controlled in the makefile or by the command line parameters of the `make` command  in the `./src` subdirectory. The makefile in the top level directory will create subdirectories corresponding to the various SNOVA parameter sets.
+The `src` directory contains the updated version of SNOVA. The `./round2_src` subdirectory contains the version as submitted to NIST round 2. 
 
-The `oddqsrc` directory contains a version of SNOVA for odd primes in the range q=7...31. This directory also contains an improved and constant-time version for q=16, l=4. See the README.md in the `oddqsrc` directory.
-
-The `dist` directory contains a makefile that will create subdirectories containing all the recommended $l=4$ SNOVA instances.
+The `dist` directory contains a makefile that will create subdirectories containing all the recommended SNOVA instances. The makefile in the top level directory will also create subdirectories in the `dist` directory.
 
 ## Build instructions
 
-Building requires `gcc` and `make`. There are no other dependencies.
+Building SNOVA requires a C compiler, `make` and the OpenSSL library (for AES). The SNOVA parameters are set in `src/snova_params.h`. The SNOVA parameters can also be changed by the command line parameters of the `make` command.
 
-To create the various SNOVA instances in separate directories enter `make` in this folder.  This will also generate the known-answer tests, the KAT files. Enter `make clean` to delete all generated folders and files contained therein. For more options and details on the SNOVA parameters see `./src/readme.md`.
+To create the recommended SNOVA instances enter `make` in this folder or in the `dist`folder. This will create the instances in subdirectories of `dist`.
 
-## Options
+To create the KAT files and their digests
+```
+cd dist/ref
+make kat
+make digest
+```
 
-The `platform` option sets the optimization level. Supported values are `ref` (default), `opt`, and `avx2`. 
-For example: `make platform=avx2`
+To obtain benchmarks
+```
+cd dist/avx2
+OPT=AVX2 make speed
+OPT=AVX2 make speed
+```
