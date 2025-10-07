@@ -1,6 +1,6 @@
 SNOVA
 =======
-This directory contains a constant-time implementation of the SNOVA signature scheme in C language which allows the field order $q$ to be an odd prime in the range 7...31. In addition, this directory contains a new optimized and constant-time implementation for $q=16, l=4$.
+This directory contains the official constant-time implementation of the SNOVA signature scheme.
 
 
 Building
@@ -18,7 +18,7 @@ make clean all P="-D SNOVA_v=24 -D SNOVA_o=5 -D SNOVA_q=16 -D SNOVA_l=4 -D AESCT
 Available optimization options are:
 1. Use `make OPT=REF` to build the reference implementation.
 2. Use `make OPT=OPT` for the plain-C optimized version.
-3. Use `make OPT=AVX2` for a version using AVX2 vectorization instructions (odd prime $q$ and $l=4$ only).
+3. Use `make OPT=AVX2` for a version using AVX2 vectorization instructions.
 
 
 Recommended parameters
@@ -42,7 +42,7 @@ Our recommended parameter sets for odd prime $q$ all have a matrix rank $l=4$. T
 Performance
 -------
 
-While the optimized versions uses only C statements, the compiler will actually vectorize the code. We found that the level of vectorization that the compiler produces depends significantly on the compiler used, and also the version of the compiler used. The best performance was obtained using gcc version 15.2.1 20250813 on Arch Linux.
+While the optimized versions use only C statements, the compiler will actually vectorize the code. We found that the level of vectorization that the compiler produces depends significantly on the compiler used, and also the version of the compiler used. The best performance was obtained using gcc version 15.2.1 20250813 on Arch Linux.
 
 We have observed the following cycle counts for the optimized `OPT=OPT` version for SNOVA_24_5_23_4:
 

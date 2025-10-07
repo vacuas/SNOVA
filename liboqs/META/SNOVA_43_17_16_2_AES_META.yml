@@ -4,7 +4,7 @@ claimed-nist-level: 1
 length-public-key: 9842
 length-secret-key: 48
 length-signature: 136
-nistkat-sha256: c4e94ffb5675d9d29671f935862b4823244f9a1287564bda53c9af3e443eb40b
+nistkat-sha256: c844bc615dd6df614f8856708ffbb9bb43ed977d7cf86b4c4fc8b82cd5380c18
 principal-submitters:
   - Lih-Chung Wang
   - Chun-Yen Chou

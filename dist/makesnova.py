@@ -50,7 +50,7 @@ for target in ['ref', 'opt', 'avx2']:
     shutil.rmtree(target, ignore_errors=True)
     os.makedirs(target)
     shutil.copy('Makefile.root', target + '/Makefile')
-    shutil.copy('../KAT/digest.sh', target)
+    shutil.copy('digest.sh', target)
 
     for param in params:
         v, o, q, l, aes = param

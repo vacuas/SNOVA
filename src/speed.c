@@ -27,9 +27,12 @@
 #endif
 
 #define TEXT_LEN 64
+#define BYTES_DIGEST 64
 
 /**
  * To get detailed API timing info use
+ *
+ * make clean speed P="-D DETAILS"
  *
  * make clean speed P="-D ANALYZE_TIMING -D AVERAGE"
  */
@@ -133,22 +136,28 @@ uint64_t avg_summary(uint64_t *t, int test_n) {
 
 int main(void) {
 	uint8_t seed[48] = {0};
-
 	uint8_t pk[CRYPTO_PUBLICKEYBYTES] = {0};
 	uint8_t sk[CRYPTO_SECRETKEYBYTES] = {0};
+	uint8_t sm[CRYPTO_BYTES + TEXT_LEN] = {0};
 
+#ifndef DETAILS
 	uint8_t text[TEXT_LEN] = {0};
 	uint8_t text1[TEXT_LEN] = {0};
-	uint8_t sm[CRYPTO_BYTES + TEXT_LEN] = {0};
 	unsigned long long smlen = 0;
 	unsigned long long len1 = 0;
-
+	int res = 0;
+	int fail = 0;
 	uint64_t t0[MAX_TESTS * 2] = {0};
 	uint64_t t1[MAX_TESTS * 2] = {0};
 	uint64_t t2[MAX_TESTS * 2] = {0};
+#else
+	uint64_t t0[MAX_TESTS * 2] = {0};
+	uint64_t t1[MAX_TESTS * 2] = {0};
+	uint64_t t2[MAX_TESTS * 2] = {0};
+	uint64_t t3[MAX_TESTS * 2] = {0};
+	uint64_t t4[MAX_TESTS * 2] = {0};
+#endif
 	int r = 0;
-	int res = 0;
-	int fail = 0;
 
 	randombytes_init(seed, NULL, 256);
 
@@ -156,6 +165,7 @@ int main(void) {
 	timespec_get(&start_time, TIME_UTC);
 	int i = 0;
 	for (; i < MAX_TESTS; i++) {
+#ifndef DETAILS
 		t0[i * 2] = get_cycles();
 		res += crypto_sign_keypair(pk, sk) & 1;
 		t0[i * 2 + 1] = get_cycles();
@@ -173,6 +183,40 @@ int main(void) {
 		res = crypto_sign_open(text1, &len1, sm, smlen, pk);
 		t2[i * 2 + 1] = get_cycles();
 		r += (res ^ fail) & 1;
+#else
+		uint8_t bseed[SEED_LENGTH];
+		uint8_t salt[BYTES_SALT];
+		uint8_t digest[BYTES_DIGEST] = {0};
+		expanded_SK skx_d = {0};
+		expanded_PK pkx = {0};
+
+		randombytes(bseed, SEED_LENGTH);
+		randombytes(salt, BYTES_SALT);
+
+		digest[0] = i & 0xff;
+		digest[1] = (i >> 8) & 0xff;
+		digest[2] = (i >> 16) & 0xff;
+
+		t0[i * 2] = get_cycles();
+		r += SNOVA_NAMESPACE(genkeys)(pk, sk, bseed);
+		t0[i * 2 + 1] = get_cycles();
+
+		t1[i * 2] = get_cycles();
+		r += SNOVA_NAMESPACE(sk_expand)(&skx_d, sk);
+		t1[i * 2 + 1] = get_cycles();
+
+		t2[i * 2] = get_cycles();
+		r += SNOVA_NAMESPACE(sign)(&skx_d, sm, digest, BYTES_DIGEST, salt);
+		t2[i * 2 + 1] = get_cycles();
+
+		t3[i * 2] = get_cycles();
+		r += SNOVA_NAMESPACE(pk_expand)(&pkx, pk);
+		t3[i * 2 + 1] = get_cycles();
+
+		t4[i * 2] = get_cycles();
+		r += SNOVA_NAMESPACE(verify)(&pkx, sm, digest, BYTES_DIGEST);
+		t4[i * 2 + 1] = get_cycles();
+#endif
 
 		struct timespec time;
 		timespec_get(&time, TIME_UTC);
@@ -201,6 +245,13 @@ int main(void) {
 	print_number(SUMMARY(t1, test_n));
 	printf(" & ");
 	print_number(SUMMARY(t2, test_n));
+
+#ifdef DETAILS
+	printf(" & ");
+	print_number(SUMMARY(t3, test_n));
+	printf(" & ");
+	print_number(SUMMARY(t4, test_n));
+#endif
 
 	if (cycles0) {
 		printf(" &      ");
