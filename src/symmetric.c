@@ -12,41 +12,81 @@
 #include "symmetric.h"
 
 #include <stdalign.h>
+#include <string.h>
 
-#include "keccak_opt64.h"
 #include "snova.h"
 
-void shake128_init(shake_t *instance) {
+#ifdef USE_OPENSSL
+
+#include <openssl/err.h>
+#include <openssl/evp.h>
+
+void shake128_init(shake_t* instance) {
+	*(EVP_MD_CTX**)instance = EVP_MD_CTX_new();
+	EVP_DigestInit_ex(*(EVP_MD_CTX**)instance, EVP_shake128(), NULL);
+}
+
+void shake256_init(shake_t* instance) {
+	*(EVP_MD_CTX**)instance = EVP_MD_CTX_new();
+	EVP_DigestInit_ex(*(EVP_MD_CTX**)instance, EVP_shake256(), NULL);
+}
+
+void shake_absorb(shake_t* instance, const uint8_t* in, size_t inlen) {
+	EVP_DigestUpdate(*(EVP_MD_CTX**)instance, in, inlen);
+}
+
+void shake_finalize(shake_t* instance) {
+	(void)instance;
+}
+
+void shake_squeeze(uint8_t* out, size_t outlen, shake_t* instance) {
+	EVP_DigestFinalXOF(*(EVP_MD_CTX**)instance, out, outlen);
+}
+
+void shake_squeeze_keep(uint8_t* out, size_t outlen, shake_t* instance) {
+	EVP_DigestSqueeze(*(EVP_MD_CTX**)instance, out, outlen);
+}
+
+void shake_release(shake_t* instance) {
+	EVP_MD_CTX_free(*(EVP_MD_CTX**)instance);
+}
+
+#else
+
+#include "keccak_opt64.h"
+
+void shake128_init(shake_t* instance) {
 	memset(instance, 0, sizeof(shake_t));
 	instance->state[26] = 168;
 }
 
-void shake256_init(shake_t *instance) {
+void shake256_init(shake_t* instance) {
 	memset(instance, 0, sizeof(shake_t));
 	instance->state[26] = 136;
 }
 
-void shake_absorb(shake_t *instance, const uint8_t *in, size_t inlen) {
+void shake_absorb(shake_t* instance, const uint8_t* in, size_t inlen) {
 	keccak_inc_absorb(instance->state, instance->state[26], in, inlen);
 }
 
-void shake_finalize(shake_t *instance) {
+void shake_finalize(shake_t* instance) {
 	keccak_inc_finalize(instance->state, instance->state[26], 0x1F);
 }
 
-void shake_squeeze(uint8_t *out, size_t outlen, shake_t *instance) {
+void shake_squeeze(uint8_t* out, size_t outlen, shake_t* instance) {
 	keccak_inc_squeeze(out, outlen, instance->state, instance->state[26]);
 }
 
-void shake_squeeze_keep(uint8_t *out, size_t outlen, shake_t *instance) {
+void shake_squeeze_keep(uint8_t* out, size_t outlen, shake_t* instance) {
 	keccak_inc_squeeze(out, outlen, instance->state, instance->state[26]);
 }
 
-void shake_release(shake_t *instance) {
+void shake_release(shake_t* instance) {
 	(void)instance;
 }
+#endif
 
-void shake256(uint8_t *out, size_t outlen, const uint8_t *in, size_t inlen) {
+void shake256(uint8_t* out, size_t outlen, const uint8_t* in, size_t inlen) {
 	shake_t instance;
 	shake256_init(&instance);
 	shake_absorb(&instance, in, inlen);
@@ -60,16 +100,16 @@ void shake256(uint8_t *out, size_t outlen, const uint8_t *in, size_t inlen) {
 
 #if defined(AESCTR)
 
-void snova_pk_expander_init(snova_pk_expander_t *instance, const uint8_t *seed, size_t input_bytes) {
+void snova_pk_expander_init(snova_pk_expander_t* instance, const uint8_t* seed, size_t input_bytes) {
 	(void)input_bytes;
 	memcpy(instance, seed, 16);
 }
 
 #define AES128_CTR SNOVA_NAMESPACE(AES128_CTR)
-int AES128_CTR(unsigned char *output, size_t outputByteLen, const unsigned char *input, size_t inputByteLen);
+int AES128_CTR(unsigned char* output, size_t outputByteLen, const unsigned char* input, size_t inputByteLen);
 
-void snova_pk_expander(uint8_t *data, size_t num_bytes, snova_pk_expander_t *instance) {
-	AES128_CTR(data, num_bytes, (uint8_t *)instance, 16);
+void snova_pk_expander(uint8_t* data, size_t num_bytes, snova_pk_expander_t* instance) {
+	AES128_CTR(data, num_bytes, (uint8_t*)instance, 16);
 }
 
 #else
@@ -83,6 +123,7 @@ void snova_pk_expander(uint8_t *data, size_t num_bytes, snova_pk_expander_t *ins
 #include "keccak_avx2.h"
 #else
 #define PARALLELISM 1
+#include "keccak_opt64.h"
 #endif
 
 typedef struct {
@@ -96,10 +137,10 @@ typedef struct {
 	int64_t bytes_left;
 } snova_pkx_impl_t;
 
-void snova_pk_expander_init(snova_pk_expander_t *arg, const uint8_t *seed, size_t input_bytes) {
-	snova_pkx_impl_t *instance = (snova_pkx_impl_t *)arg;
+void snova_pk_expander_init(snova_pk_expander_t* arg, const uint8_t* seed, size_t input_bytes) {
+	snova_pkx_impl_t *instance = (snova_pkx_impl_t*)arg;
 	uint64_t keccak_instance[25] = {0};
-	uint8_t *prepared_state8 = (uint8_t *)instance->prepared_state;
+	uint8_t *prepared_state8 = (uint8_t*)instance->prepared_state;
 
 	instance->block = 0;
 	instance->index = 0;
@@ -121,13 +162,13 @@ void snova_pk_expander_init(snova_pk_expander_t *arg, const uint8_t *seed, size_
 	}
 }
 
-void snova_pk_expander(uint8_t *data, size_t num_bytes, snova_pk_expander_t *arg) {
-	snova_pkx_impl_t *instance = (snova_pkx_impl_t *)arg;
+void snova_pk_expander(uint8_t* data, size_t num_bytes, snova_pk_expander_t* arg) {
+	snova_pkx_impl_t *instance = (snova_pkx_impl_t*)arg;
 	uint8_t *data8 = data;
 	instance->last_idx += num_bytes;
 
 	if (instance->bytes_left > 0) {
-		uint8_t *state8 = (uint8_t *)instance->states;
+		uint8_t *state8 = (uint8_t*)instance->states;
 		state8 += instance->rate * PARALLELISM - instance->bytes_left;
 
 		if (instance->bytes_left > (int64_t)num_bytes) {
@@ -147,7 +188,7 @@ void snova_pk_expander(uint8_t *data, size_t num_bytes, snova_pk_expander_t *arg
 		memcpy(buffer, instance->prepared_state, PARALLELISM * 200);
 		for (int idx = 0; idx < PARALLELISM; idx++) {
 #if PARALLELISM == 1
-			uint8_t *states8 = (uint8_t *)buffer;
+			uint8_t *states8 = (uint8_t*)buffer;
 			for (int iend = 0; iend < 8; iend++) {
 				uint8_t block_i = (instance->block >> (8 * iend)) & 0xff;
 				states8[instance->input_bytes * PARALLELISM + idx * 8 + iend] ^= block_i;
@@ -159,11 +200,11 @@ void snova_pk_expander(uint8_t *data, size_t num_bytes, snova_pk_expander_t *arg
 		}
 
 #if PARALLELISM == 1
-		KeccakF1600_StatePermute((void *)buffer);
+		KeccakF1600_StatePermute((void*)buffer);
 #elif PARALLELISM == 4
-		KeccakP1600times4_PermuteAll_24rounds((void *)buffer);
+		KeccakP1600times4_PermuteAll_24rounds((void*)buffer);
 #elif PARALLELISM == 8
-		KeccakP1600times8_PermuteAll_24rounds((void *)buffer);
+		KeccakP1600times8_PermuteAll_24rounds((void*)buffer);
 #endif
 
 		for (size_t idx = 0; idx < PARALLELISM; idx++) {

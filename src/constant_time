@@ -39,13 +39,13 @@
 {
    Rejection sampling when no valid solution was found, Optimized q=16
    Memcheck:Cond
-   src:snova_opt_16.c:972
+   src:snova_opt_16.c:982
 }
 
 {
    Rejection sampling when no valid solution was found, Optimized q=16
    Memcheck:Cond
-   src:snova_opt_16.c:1004
+   src:snova_opt_16.c:1014
 }
 
 # AVX2, odd q
@@ -79,7 +79,7 @@
 {
    Rejection sampling when no valid solution was found
    Memcheck:Cond
-   src:snova_avx2_16l2.c:1528
+   src:snova_avx2_16l2.c:1534
 }
 
 {
@@ -174,7 +174,7 @@
 {
    Condition depends on the function return value
    Memcheck:Cond
-   src:sign.c:64
+   src:sign.c:53
 }
 
 {

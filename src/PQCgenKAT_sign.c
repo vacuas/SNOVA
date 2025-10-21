@@ -65,19 +65,9 @@ int main(void) {
 		return KAT_FILE_OPEN_ERROR;
 	}
 
-
-#if SNOVA_v == 24 && SNOVA_o == 5 && SNOVA_q == 23 && SNOVA_l == 4
-	uint32_t i_seed = 15439;
-	entropy_input[0] = i_seed & 0xff;
-	entropy_input[1] = (i_seed >> 8) & 0xff;
-	entropy_input[2] = (i_seed >> 16) & 0xff;
-	entropy_input[3] = (i_seed >> 24) & 0xff;
-#else
 	for (int i = 0; i < 48; i++) {
 		entropy_input[i] = i;
 	}
-#endif
-
 	randombytes_init(entropy_input, NULL, 256);
 
 	for (int i = 0; i < 100; i++) {

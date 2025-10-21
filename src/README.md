@@ -6,7 +6,8 @@ This directory contains the official constant-time implementation of the SNOVA s
 Building
 -------
 
-Building SNOVA requires a C compiler and `make`. The SNOVA parameters are set in `snova_params.h`. The SNOVA parameters can also be changed by the command line parameters of the `make` command, e.g.
+Building SNOVA requires a C compiler and `make`. There are no other dependencies.
+The SNOVA parameters are set in `snova_params.h`. The SNOVA parameters can also be changed by the command line parameters of the `make` command, e.g.
 ```
 make clean all P="-D SNOVA_v=37 -D SNOVA_o=8 -D SNOVA_q=19 -D SNOVA_l=4"
 ```
@@ -18,8 +19,13 @@ make clean all P="-D SNOVA_v=24 -D SNOVA_o=5 -D SNOVA_q=16 -D SNOVA_l=4 -D AESCT
 Available optimization options are:
 1. Use `make OPT=REF` to build the reference implementation.
 2. Use `make OPT=OPT` for the plain-C optimized version.
-3. Use `make OPT=AVX2` for a version using AVX2 vectorization instructions.
+3. Use `make OPT=AVX2` for a version using AVX2 vectorization instructions, if available.
 
+The distribution comes with implementations of AES and SHAKE. It is also possible to use the OpenSSL library, which may be faster on non-AVX2 platforms.
+To use the OpenSSL library build as
+```
+make clean all P="-D USE_OPENSSL -D AESCTR" LIBS=-lcrypto
+```
 
 Recommended parameters
 -------
@@ -42,24 +48,14 @@ Our recommended parameter sets for odd prime $q$ all have a matrix rank $l=4$. T
 Performance
 -------
 
-While the optimized versions use only C statements, the compiler will actually vectorize the code. We found that the level of vectorization that the compiler produces depends significantly on the compiler used, and also the version of the compiler used. The best performance was obtained using gcc version 15.2.1 20250813 on Arch Linux.
-
-We have observed the following cycle counts for the optimized `OPT=OPT` version for SNOVA_24_5_23_4:
-
-| Compiler | version |   Genkey  |     Sign   |  Verify  |
-|----------|---------|-----------|------------|----------|
-|   gcc    |  15.2.1 |   456,966 |    758,046 |  356,460 |
-|   gcc    |  13.3.0 |   459,138 |    977,592 |  364,516 |
-|   gcc    |  11.4.1 |   504,406 |  1,449,538 |  380,404 |
-|  clang   |  20.1.8 |   953,932 |  1,960,312 |  425,523 |
-
-These cycle counts were collected on an Intel(R) Core(TM) Ultra 7 155H (Meteor Lake) laptop running Arch Linux and using gcc version 15.2.1 20250813. We report the median over 2048 benchmark runs.
-
-The performance of the sign on other compilers can be made to be close to that of gcc 15.1.1 by using explicit AVX2 vectorization instructions. Benchmark results for the vectorized `OPT=AVX2` version of SNOVA_24_5_23_4 are:
+The performance of SNOVA depends significantly on the version of the compiler used. The best performance was obtained using gcc version 15.2.1 20250813 on Arch Linux.
+We have observed the following cycle counts for the vectorized `OPT=AVX2` version of SNOVA_24_5_23_4:
 
 | Compiler | version |   Genkey  |     Sign   |  Verify  |
 |----------|---------|-----------|------------|----------|
-|   gcc    |  15.2.1 |   456,966 |    758,046 |  356,460 |
-|   gcc    |  13.3.0 |   459,376 |    949,297 |  366,787 |
-|   gcc    |  11.4.1 |   503,318 |  1,068,568 |  379,610 |
-|  clang   |  20.1.8 |   970,835 |  1,022,163 |  422,670 |
+|   gcc    |  15.2.1 |   404,634 |    692,838 | 317,819 |
+|   gcc    |  13.3.0 |   405,211 |    900,276 | 322,433 |
+|   gcc    |  11.4.1 |   448,117 |  1,013,698 | 340,407 |
+|  clang   |  20.1.8 |   893,024 |    970,647 | 377,861 |
+
+These cycle counts were collected on an Intel(R) Core(TM) Ultra 7 155H (Meteor Lake) laptop running Arch Linux. We report the median over 2048 benchmark runs.

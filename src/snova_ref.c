@@ -12,6 +12,9 @@
 #include "snova.h"
 #include "symmetric.h"
 
+// Size of the message digest in the hash-and-sign paragdigm.
+#define BYTES_DIGEST 64
+
 typedef uint8_t gf_t;
 
 gf_t gf_multtab[SNOVA_q * SNOVA_q] = {0};
@@ -402,12 +405,19 @@ void expand_public(gf_t *P_matrix, const uint8_t *seed) {
 #endif
 }
 
-static void hash_combined(uint8_t *hash_out, const uint8_t *digest, size_t len_digest, const uint8_t *pk_seed,
+static void hash_combined(uint8_t *hash_out, const uint8_t *m, size_t mlen, const uint8_t *pk_seed,
                           const uint8_t *salt) {
 	shake_t state;
 	shake256_init(&state);
 	shake_absorb(&state, pk_seed, SEED_LENGTH_PUBLIC);
-	shake_absorb(&state, digest, len_digest);
+#if SNOVA_q == 16
+	// No change to KATs
+	uint8_t digest[BYTES_DIGEST];
+	shake256(digest, BYTES_DIGEST, m, mlen);
+	shake_absorb(&state, digest, BYTES_DIGEST);
+#else
+	shake_absorb(&state, m, mlen);
+#endif
 	shake_absorb(&state, salt, BYTES_SALT);
 	shake_finalize(&state);
 	shake_squeeze(hash_out, BYTES_HASH, &state);
@@ -720,7 +730,9 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK *skx, uint8_t *sig, const uint8_t *d
 		shake_absorb(&v_instance, skx->sk_seed + SEED_LENGTH_PUBLIC, SEED_LENGTH_PRIVATE);
 #if SNOVA_q == 16
 		// No change to KATs
-		shake_absorb(&v_instance, digest, len_digest);
+		uint8_t digest16[BYTES_DIGEST];
+		shake256(digest16, BYTES_DIGEST, digest, len_digest);
+		shake_absorb(&v_instance, digest16, BYTES_DIGEST);
 		shake_absorb(&v_instance, salt, BYTES_SALT);
 #else
 		shake_absorb(&v_instance, sign_hashb, BYTES_HASH);
