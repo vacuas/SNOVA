@@ -321,9 +321,7 @@ static int expand_pk(gf_t* P22, const uint8_t* pk) {
 static void expand_public(gf_t* P_matrix, const uint8_t* seed) {
 	uint8_t pk_bytes[NUM_GEN_PUB_BYTES];
 
-	snova_pk_expander_t instance;
-	snova_pk_expander_init(&instance, seed, SEED_LENGTH_PUBLIC);
-	snova_pk_expander(pk_bytes, NUM_GEN_PUB_BYTES, &instance);
+	snova_pk_expand(pk_bytes, NUM_GEN_PUB_BYTES, seed, SEED_LENGTH_PUBLIC);
 
 	convert_bytes_to_GF(P_matrix, (uint8_t*)pk_bytes, NUM_GEN_PUB_GF);
 }

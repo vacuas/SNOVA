@@ -518,9 +518,7 @@ static void gen_S_array(void) {
  * bytes_prng_public)
  */
 static void pk_expand(const uint8_t* seed, uint8_t* pk_bytes) {
-	snova_pk_expander_t instance;
-	snova_pk_expander_init(&instance, seed, SEED_LENGTH_PUBLIC);
-	snova_pk_expander(pk_bytes, bytes_prng_public, &instance);
+	snova_pk_expand(pk_bytes, NUM_GEN_PUB_BYTES, seed, SEED_LENGTH_PUBLIC);
 }
 
 // Constant time version of: (val != 0)
@@ -1825,7 +1823,7 @@ static int verify_signture_vtl_core(const uint8_t* pt_digest, uint64_t bytes_dig
 	}
 
 	evaluation_vector_vtl(hash_in_GF16Matrix, pkx, signature_in_GF16Matrix);
-	convert_GF16s_to_bytes(hash_in_bytes, (gf16_t * )hash_in_GF16Matrix, m_SNOVA * lsq_SNOVA);
+	convert_GF16s_to_bytes(hash_in_bytes, (gf16_t*)hash_in_GF16Matrix, m_SNOVA * lsq_SNOVA);
 
 	int result = 0;
 	for (int i = 0; i < bytes_hash; ++i) {
