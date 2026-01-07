@@ -61,21 +61,6 @@ static uint16_t ct_gf_inverse(uint16_t val) {
 
 #define gf_S SNOVA_NAMESPACE(Smat)
 
-#if SNOVA_l == 4 && SNOVA_q == 23
-uint16_t gf_S[SNOVA_l * SNOVA_l2] = {1, 0, 0, 0, 0, 1,  0,  0,  0,  0,  1,  0, 0,  0,  0, 1,  1,  2, 3,  0, 2,  3,
-                                     0, 1, 3, 0, 1, 2,  0,  1,  2,  22, 14, 8, 6,  8,  8, 14, 8,  2, 6,  8, 14, 0,
-                                     8, 2, 0, 6, 2, 14, 18, 12, 14, 14, 13, 5, 18, 13, 9, 13, 12, 5, 13, 19
-                                    };
-#define SNOVA_INIT
-
-#elif SNOVA_l == 4 && SNOVA_q == 19
-static uint16_t gf_S[SNOVA_l * SNOVA_l2] = {1, 0,  0,  0, 0,  1, 0, 0, 0, 0,  1,  0,  0, 0,  0, 1,  1, 2,  3, 0, 2,  3,
-                                            0, 1,  3,  0, 1,  2, 0, 1, 2, 15, 14, 8,  6, 8,  8, 14, 8, 18, 6, 8, 14, 13,
-                                            8, 18, 13, 2, 10, 3, 7, 7, 3, 0,  11, 15, 7, 11, 1, 3,  7, 15, 3, 17
-                                           };
-#define SNOVA_INIT
-
-#else
 uint16_t gf_S[SNOVA_l * SNOVA_l2] = {0};
 
 static void gen_S_array(void) {
@@ -135,7 +120,6 @@ static void gen_fixed_ABQ(const char* abq_seed) {
         first_time = 0; \
         gen_S_array();  \
     }
-#endif
 #endif
 
 /**
@@ -1204,6 +1188,12 @@ int SNOVA_NAMESPACE(pk_expand)(expanded_PK* pkx, const uint8_t* pk) {
 
 	return 0;
 }
+
+
+#if __ARM_NEON
+#undef SNOVA_lr32
+#define SNOVA_lr32 SNOVA_lr
+#endif
 
 /**
  * Optimized version of verify.

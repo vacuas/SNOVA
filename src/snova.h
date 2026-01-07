@@ -26,7 +26,9 @@
 #define SNOVA_r SNOVA_l
 #endif
 
-#define FIXED_ABQ (SNOVA_l < 4)
+#ifndef FIXED_ABQ
+#define FIXED_ABQ ((SNOVA_q != 16) || (SNOVA_l < 4))
+#endif
 
 #ifdef AESCTR
 #define PKX_NAME _aes_
