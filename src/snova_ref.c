@@ -12,9 +12,6 @@
 #include "snova.h"
 #include "symmetric.h"
 
-// Size of the message digest in the hash-and-sign paragdigm.
-#define BYTES_DIGEST 64
-
 typedef uint8_t gf_t;
 
 gf_t gf_multtab[SNOVA_q * SNOVA_q] = {0};
@@ -434,18 +431,11 @@ void expand_public(gf_t* P_matrix, const uint8_t* seed) {
 #endif
 }
 
-static void hash_combined(uint8_t* hash_out, const uint8_t* m, size_t mlen, const uint8_t* pk_seed, const uint8_t* salt) {
+static void hash_combined(uint8_t* hash_out, const uint8_t* digest, const uint8_t* pk_seed, const uint8_t *salt) {
 	shake_t state;
 	shake256_init(&state);
 	shake_absorb(&state, pk_seed, SEED_LENGTH_PUBLIC);
-#if SNOVA_q == 16
-	// No change to KATs
-	uint8_t digest[BYTES_DIGEST];
-	shake256(digest, BYTES_DIGEST, m, mlen);
 	shake_absorb(&state, digest, BYTES_DIGEST);
-#else
-	shake_absorb(&state, m, mlen);
-#endif
 	shake_absorb(&state, salt, BYTES_SALT);
 	shake_finalize(&state);
 	shake_squeeze(hash_out, BYTES_HASH, &state);
@@ -668,8 +658,7 @@ int SNOVA_NAMESPACE(sk_expand)(expanded_SK* skx, const uint8_t* sk) {
 /**
  * Reference version of Sign. Deterministic using the salt provided
  */
-int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* digest, const size_t len_digest,
-                          const uint8_t *salt) {
+int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* digest,  const uint8_t *salt) {
 	if (first_time) {
 		snova_init();
 	}
@@ -749,7 +738,7 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* d
 	gf_t hash_in_GF16[GF16_HASH];
 
 	uint8_t sign_hashb[BYTES_HASH];
-	hash_combined(sign_hashb, digest, len_digest, skx->sk_seed, salt);
+	hash_combined(sign_hashb, digest, skx->sk_seed, salt);
 	expand_gf(hash_in_GF16, sign_hashb, GF16_HASH);
 
 	// Find a solution for T.X
@@ -777,9 +766,7 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* d
 		shake_absorb(&v_instance, skx->sk_seed + SEED_LENGTH_PUBLIC, SEED_LENGTH_PRIVATE);
 #if SNOVA_q == 16
 		// No change to KATs
-		uint8_t digest16[BYTES_DIGEST];
-		shake256(digest16, BYTES_DIGEST, digest, len_digest);
-		shake_absorb(&v_instance, digest16, BYTES_DIGEST);
+		shake_absorb(&v_instance, digest, BYTES_DIGEST);
 		shake_absorb(&v_instance, salt, BYTES_SALT);
 #else
 		shake_absorb(&v_instance, sign_hashb, BYTES_HASH);
@@ -1150,14 +1137,16 @@ int SNOVA_NAMESPACE(pk_expand)(expanded_PK* pkx, const uint8_t* pk) {
 /**
  * Reference version of verify.
  */
-int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const uint8_t* digest, const size_t len_digest) {
+int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const uint8_t* digest) {
 	if (first_time) {
 		snova_init();
 	}
 
 	// Actual verify
 	gf_t signature_in_GF[NUMGF_SIGNATURE];
-	expand_gf(signature_in_GF, sig, NUMGF_SIGNATURE);
+	if (expand_gf(signature_in_GF, sig, NUMGF_SIGNATURE)) {
+		return -1;
+	}
 
 #if defined(SYMMETRIC) && (SNOVA_r == SNOVA_l)
 	// Reject if the signature has symmetric matrices
@@ -1259,7 +1248,7 @@ int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const ui
 	uint8_t signed_bytes[BYTES_HASH];
 	uint8_t signed_gf[GF16_HASH] = {0};
 	const uint8_t *salt = sig + BYTES_SIGNATURE - BYTES_SALT;
-	hash_combined(signed_bytes, digest, len_digest, pkx->pk_seed, salt);
+	hash_combined(signed_bytes, digest, pkx->pk_seed, salt);
 	expand_gf(signed_gf, signed_bytes, GF16_HASH);
 
 	int result = 0;

@@ -70,7 +70,6 @@ n = v + o
 MAYO = l == 1
 
 ASYMMETRIC_PUBMAT = q == 16
-ROUND2_KAT = l == r and q == 16
 
 # Set GF
 
@@ -191,13 +190,10 @@ def hash_combined(msg, pk_seed, salt):
     if MAYO:
         dgst = hashlib.shake_256(msg).digest(32)
         state.update(dgst)
-    elif ROUND2_KAT:
+    else:
         state.update(pk_seed)
         dgst = hashlib.shake_256(msg).digest(64)
         state.update(dgst)
-    else:
-        state.update(pk_seed)
-        state.update(msg)
     state.update(salt)
     res = state.digest(BYTES_HASH)
     res_gf = expand_gf(res, GF16_HASH)
@@ -323,7 +319,7 @@ def expand_public_sym(seed):
         Pm11.append(p11)
         Pm12.append(p12)
         Pm21.append(p21)
-    return Pm11, Pm12, Pm21, fixed_abq() if l < 4 else data[idx:]
+    return Pm11, Pm12, Pm21, fixed_abq() if l < 4 or q != 16 else data[idx:]
 
 
 def expand_public_asym(seed):
@@ -612,7 +608,7 @@ def sign(sk, msg, salt):
             msg_hash, msg_bytes = hash_combined(msg, pk_seed, salt_byte)
             v_state = hashlib.shake_256()
             v_state.update(sk_seed)
-            if ROUND2_KAT:
+            if q == 16:
                 dgst = hashlib.shake_256(msg).digest(64)
                 v_state.update(dgst)
                 v_state.update(salt)

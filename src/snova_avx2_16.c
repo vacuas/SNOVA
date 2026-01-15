@@ -22,9 +22,6 @@
 
 #include "symmetric.h"
 
-// Size of the message digest in the hash-and-sign paragdigm.
-#define BYTES_DIGEST 64
-
 #define o_SNOVA SNOVA_o
 #define v_SNOVA SNOVA_v
 #define l_SNOVA SNOVA_l
@@ -794,13 +791,11 @@ static void expand_public_pack_core(uint8_t* pkx_pck, const uint8_t* pk) {
  * createHashOut
  */
 static void createSignedHash(const uint8_t* digest, uint64_t bytes_digest, const uint8_t* pt_public_key_seed,
-                             const uint8_t *array_salt, uint8_t *signed_hash_out, uint8_t *digest16) {
-	// No change to KATs
-	shake256(digest16, BYTES_DIGEST, digest, bytes_digest);
+                             const uint8_t *array_salt, uint8_t *signed_hash_out) {
 	Keccak_HashInstance hashInstance;
 	Keccak_HashInitialize_SHAKE256(&hashInstance);
 	Keccak_HashUpdate(&hashInstance, pt_public_key_seed, 8 * seed_length_public);
-	Keccak_HashUpdate(&hashInstance, digest16, 8 * BYTES_DIGEST);
+	Keccak_HashUpdate(&hashInstance, digest, 8 * bytes_digest);
 	Keccak_HashUpdate(&hashInstance, array_salt, 8 * bytes_salt);
 	Keccak_HashFinal(&hashInstance, NULL);
 	Keccak_HashSqueeze(&hashInstance, signed_hash_out, 8 * bytes_hash);
@@ -1277,8 +1272,7 @@ static int sign_digest_core_gnl_vtl(uint8_t* pt_signature, const uint8_t* digest
 	int flag_redo = 1;
 	uint8_t num_sign = 0;
 
-	uint8_t digest16[BYTES_DIGEST];
-	createSignedHash(digest, bytes_digest, pt_public_key_seed, array_salt, signed_hash, digest16);
+	createSignedHash(digest, BYTES_DIGEST, pt_public_key_seed, array_salt, signed_hash);
 
 	// put hash value in GF16 array
 	convert_bytes_to_GF16s(signed_hash, hash_in_GF16, GF16s_hash);
@@ -1300,7 +1294,7 @@ static int sign_digest_core_gnl_vtl(uint8_t* pt_signature, const uint8_t* digest
 		Keccak_HashInstance hashInstance;
 		Keccak_HashInitialize_SHAKE256(&hashInstance);
 		Keccak_HashUpdate(&hashInstance, pt_private_key_seed, 8 * seed_length_private);
-		Keccak_HashUpdate(&hashInstance, digest16, 8 * BYTES_DIGEST);
+		Keccak_HashUpdate(&hashInstance, digest, 8 * BYTES_DIGEST);
 		Keccak_HashUpdate(&hashInstance, array_salt, 8 * bytes_salt);
 		Keccak_HashUpdate(&hashInstance, &num_sign, 8);
 		Keccak_HashFinal(&hashInstance, NULL);
@@ -1803,13 +1797,10 @@ static int verify_signture_vtl_core(const uint8_t* pt_digest, uint64_t bytes_dig
 	gf16m_t hash_in_GF16Matrix[m_SNOVA];
 	gf16m_t signature_in_GF16Matrix[n_SNOVA];
 
-	uint8_t digest16[BYTES_DIGEST];
-	shake256(digest16, BYTES_DIGEST, pt_digest, bytes_digest);
-
 	Keccak_HashInstance hashInstance;
 	Keccak_HashInitialize_SHAKE256(&hashInstance);
 	Keccak_HashUpdate(&hashInstance, pkx->pt_public_key_seed, 8 * seed_length_public);
-	Keccak_HashUpdate(&hashInstance, digest16, 8 * BYTES_DIGEST);
+	Keccak_HashUpdate(&hashInstance, pt_digest, 8 * bytes_digest);
 	Keccak_HashUpdate(&hashInstance, pt_salt, 8 * bytes_salt);
 	Keccak_HashFinal(&hashInstance, NULL);
 	Keccak_HashSqueeze(&hashInstance, signed_hash, 8 * bytes_hash);
@@ -1927,12 +1918,11 @@ int SNOVA_NAMESPACE(genkeys)(uint8_t* pk, uint8_t* ssk, const uint8_t* seed) {
 	return 0;
 }
 
-int SNOVA_NAMESPACE(sign)(const expanded_SK* esk, uint8_t* pt_signature, const uint8_t* digest, const size_t bytes_digest,
-                          const uint8_t *array_salt) {
+int SNOVA_NAMESPACE(sign)(const expanded_SK* esk, uint8_t* pt_signature, const uint8_t* digest, const uint8_t *array_salt) {
 	snova_init();
 	sk_gf16 sk_upk;
 	sk_unpack(&sk_upk, (uint8_t*)esk);
-	int res = sign_digest_core_gnl_vtl(pt_signature, digest, bytes_digest, (uint8_t*)array_salt, sk_upk.Aalpha, sk_upk.Balpha,
+	int res = sign_digest_core_gnl_vtl(pt_signature, digest, BYTES_DIGEST, (uint8_t*)array_salt, sk_upk.Aalpha, sk_upk.Balpha,
 	                                   sk_upk.Qalpha1, sk_upk.Qalpha2, sk_upk.T12, sk_upk.F11, sk_upk.F12, sk_upk.F21,
 	                                   sk_upk.pt_public_key_seed, sk_upk.pt_private_key_seed);
 	return res;
@@ -1944,8 +1934,7 @@ int SNOVA_NAMESPACE(pk_expand)(expanded_PK* pkx, const uint8_t* pk) {
 	return 0;
 }
 
-int SNOVA_NAMESPACE(verify)(const expanded_PK* pk, const uint8_t* pt_signature, const uint8_t* pt_digest,
-                            const size_t bytes_digest) {
+int SNOVA_NAMESPACE(verify)(const expanded_PK* pk, const uint8_t* pt_signature, const uint8_t* pt_digest) {
 	snova_init();
-	return verify_signture_vtl_core(pt_digest, bytes_digest, pt_signature, (public_key_expand*)pk);
+	return verify_signture_vtl_core(pt_digest, BYTES_DIGEST, pt_signature, (public_key_expand*)pk);
 }

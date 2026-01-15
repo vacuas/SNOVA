@@ -28,6 +28,16 @@
 #define SNOVA_m1 25
 #define SNOVA_alpha 24
 
+#elif 0
+
+#define SNOVA_v 22
+#define SNOVA_o 4
+#define SNOVA_q 16
+#define SNOVA_l 4
+#define SNOVA_r 5
+#define SNOVA_m1 5
+#define SNOVA_alpha 22
+
 #else
 
 #define SNOVA_v 24
