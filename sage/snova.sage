@@ -4,7 +4,7 @@
 #
 # Copyright (c) 2025 SNOVA TEAM
 
-import hashlib
+from hashlib import shake_128, shake_256
 import math
 import traceback
 
@@ -25,21 +25,21 @@ q = 23
 l = 4
 aes = False
 
-# RectSNOVA parameters
+# Derived RectSNOVA parameters
 
 r = l
 m1 = m1 = math.ceil(o * r / l)
 n_alpha = r * r + r
 
-# RectSNOVA proposal
+# RectSNOVA instance (36,7,19,2,5,16,20)
 
 if False:
-    v = 29
+    v = 36
     o = 7
     q = 19
     l = 2
     r = 5
-    m1 = 18
+    m1 = 16
     n_alpha = 20
 
 
@@ -48,7 +48,6 @@ if False:
 n = v + o
 
 ASYMMETRIC_PUBMAT = q == 16
-ROUND2_KAT = l == r and q == 16
 
 # Set GF
 
@@ -156,23 +155,24 @@ def compress_gf(data, num):
     return bytes(res[:BYTES_GF(num)])
 
 
+def pad_or_hash(msg):
+    if len(msg) > 64:
+        dgst = shake_256(msg).digest(64)
+    else:
+        # Pad with zeroes to fixed size of 64 bytes
+        dgst = msg + 0.to_bytes(64 - len(msg))
+    return dgst
+
+
 def hash_combined(msg, pk_seed, salt):
     # Get message hash in $\mathbb{F}_{q}$
-    state = hashlib.shake_256()
-    state.update(pk_seed)
-    if ROUND2_KAT:
-        dgst = hashlib.shake_256(msg).digest(64)
-        state.update(dgst)
-    else:
-        state.update(msg)
-    state.update(salt)
-    res = state.digest(BYTES_HASH)
+    res = shake_256(pk_seed + pad_or_hash(msg) + salt).digest(BYTES_HASH)
     res_gf = expand_gf(res, GF16_HASH)
 
     # Necessary to be compliant to KATs from C-Reference
     msg_hash = [res_gf[mi * l * r + j1 * l + i1] for mi in range(o) for i1 in range(l) for j1 in range(r)]
 
-    return msg_hash, res
+    return msg_hash
 
 
 # XOF
@@ -189,7 +189,7 @@ def snova_xof(seed):
             blockseed = bytearray(seed)
             for j in range(8):
                 blockseed.append((i >> (8 * j)) % 256)
-            res += hashlib.shake_128(blockseed).digest(168)
+            res += shake_128(blockseed).digest(168)
         return bytes(res[:NUM_GEN_PUB_BYTES])
 
 
@@ -207,7 +207,7 @@ def expand_T12(seed):
             F += S**i * from_int(coefs[i])
         return F
 
-    sk_data = hashlib.shake_256(seed).digest(2 * o * v * l)  # Overdimensioned
+    sk_data = shake_256(seed).digest(2 * o * v * l)  # Overdimensioned
     coef = []
     idx = 0
     i = 0
@@ -250,7 +250,7 @@ def convert_bytes_to_GF(data):
 
 def fixed_abq():
     NUM_ABQ = o * n_alpha * (r * (r + l) + 2 * l)
-    abqdata = hashlib.shake_256(b'SNOVA_ABQ').digest(NUM_ABQ)
+    abqdata = shake_256(b'SNOVA_ABQ').digest(NUM_ABQ)
     return convert_bytes_to_GF(abqdata)
 
 
@@ -288,7 +288,7 @@ def expand_public_sym(seed):
         Pm11.append(p11)
         Pm12.append(p12)
         Pm21.append(p21)
-    return Pm11, Pm12, Pm21, fixed_abq() if l < 4 else data[idx:]
+    return Pm11, Pm12, Pm21, fixed_abq() if l < 4 or q != 16 else data[idx:]
 
 
 def expand_public_asym(seed):
@@ -467,7 +467,7 @@ def sign(sk, msg, salt):
         Q1.append(q1mat)
         Q2.append(q2mat)
 
-    msg_hash, msg_bytes = hash_combined(msg, pk_seed, salt)
+    msg_hash = hash_combined(msg, pk_seed, salt)
 
     num_sign = 0
     while True:
@@ -478,15 +478,7 @@ def sign(sk, msg, salt):
         # Assign values to vinegar variables
         # Vinegar from sk and salt
 
-        v_state = hashlib.shake_256()
-        v_state.update(sk_seed)
-        if ROUND2_KAT:
-            dgst = hashlib.shake_256(msg).digest(64)
-            v_state.update(dgst)
-            v_state.update(salt)
-        else:
-            v_state.update(msg_bytes)
-        v_state.update(num_sign.to_bytes(1))
+        v_state = shake_256(sk_seed + pad_or_hash(msg) + salt + num_sign.to_bytes(1))
         vinegar_byte = v_state.digest(BYTES_GF(v * l * r))
         vinegar_gf = expand_gf(vinegar_byte, v * l * r)
         vinegar = matrix(GF_q, v * l, r, lambda i, j: vinegar_gf[i * r + j])
@@ -536,11 +528,10 @@ def sign(sk, msg, salt):
                                         + temp2[ti2, idx * l + tj1] * B[mia][tj2, ti1]
                                     gauss[mi * l * r + ti1 * r + ti2, idx * l * r + tj1 * r + tj2] += val
 
-        try:
-            solution = gauss.solve_right(msg_vv)
-        except ValueError:
-            # print('no solution')
+        if gauss.det() == 0:
             continue
+
+        solution = gauss.solve_right(msg_vv)
 
         sol_mat = matrix(GF_q, o * l, r, lambda i, j: solution[i * r + j])
         vinegar += T12 * sol_mat
@@ -612,7 +603,7 @@ def verify(pk, sig_bytes, msg):
     sig_hash = [temp[mi][i1][j1] for mi in range(o) for j1 in range(l) for i1 in range(r)]
 
     # Check against expected hash
-    msg_hash, _ = hash_combined(msg, pk_seed, salt)
+    msg_hash = hash_combined(msg, pk_seed, salt)
 
     if msg_hash != sig_hash:
         raise Exception('Verify failed')
