@@ -1,8 +1,8 @@
 SNOVA
 =======
-This directory contains a tool to create the recommended SNOVA 2.1 instances.
+This directory contains a tool to create the recommended SNOVA 2.2 instances.
 
-Use `make` to create `ref`, `opt`, and `avx2` directories. Use `make rsnova` to make the instances with rectangular signatures.
+Use `make` to create `ref`, `opt`, and `avx2` directories.
 
 In one of those directories use
 ```

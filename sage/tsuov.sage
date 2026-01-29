@@ -92,7 +92,7 @@ n_alpha = r * r + r
 n = v + o
 
 ASYMMETRIC_PUBMAT = q == 16
-ROUND2_KAT = l == r and q == 16
+SIGN_DIGEST = l == r and q == 16
 
 # Set GF
 
@@ -261,7 +261,7 @@ def compress_gf(data, num, ext=False):
 def hash_combined(msg, pk_seed, salt):
     # Get message hash in $\mathbb{F}_{q}$
     state = hashlib.shake_256()
-    if ROUND2_KAT:
+    if SIGN_DIGEST:
         state.update(pk_seed)
         dgst = hashlib.shake_256(msg).digest(64)
         state.update(dgst)
@@ -629,7 +629,7 @@ def sign(sk, msg, salt):
         msg_hash, msg_bytes = hash_combined(msg, pk_seed, salt_byte)
         v_state = hashlib.shake_256()
         v_state.update(sk_seed)
-        if ROUND2_KAT:
+        if SIGN_DIGEST:
             dgst = hashlib.shake_256(msg).digest(64)
             v_state.update(dgst)
             v_state.update(salt)

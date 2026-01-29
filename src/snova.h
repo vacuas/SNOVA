@@ -26,7 +26,9 @@
 #define SNOVA_r SNOVA_l
 #endif
 
-#define FIXED_ABQ (SNOVA_l < 4)
+#ifndef FIXED_ABQ
+#define FIXED_ABQ ((SNOVA_q != 16) || (SNOVA_l < 4))
+#endif
 
 #ifdef AESCTR
 #define PKX_NAME _aes_
@@ -43,6 +45,7 @@
 #define SEED_LENGTH (SEED_LENGTH_PUBLIC + SEED_LENGTH_PRIVATE)
 
 #define BYTES_SALT 16
+#define BYTES_DIGEST 64
 
 // Derived
 #define SNOVA_n (SNOVA_v + SNOVA_o)
@@ -176,9 +179,8 @@ typedef struct {
 
 int SNOVA_NAMESPACE(genkeys)(uint8_t* pk, uint8_t* sk, const uint8_t* seed);
 int SNOVA_NAMESPACE(sk_expand)(expanded_SK* skx, const uint8_t* sk);
-int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* digest, const size_t len_digest,
-                          const uint8_t *salt);
+int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* digest, const uint8_t *salt);
 int SNOVA_NAMESPACE(pk_expand)(expanded_PK* pkx, const uint8_t* pk);
-int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const uint8_t* digest, const size_t len_digest);
+int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const uint8_t* digest);
 
 #endif

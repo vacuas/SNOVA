@@ -71,24 +71,17 @@ static uint16_t ct_gf_inverse(uint16_t val) {
 
 #define gf_S SNOVA_NAMESPACE(Smat)
 
-#if SNOVA_l == 4 && SNOVA_q == 23
+#if SNOVA_l == 4 && SNOVA_q == 23 && !FIXED_ABQ
 uint16_t gf_S[SNOVA_l * SNOVA_l2] = {1, 0, 0, 0, 0, 1,  0,  0,  0,  0,  1,  0, 0,  0,  0, 1,  1,  2, 3,  0, 2,  3,
                                      0, 1, 3, 0, 1, 2,  0,  1,  2,  22, 14, 8, 6,  8,  8, 14, 8,  2, 6,  8, 14, 0,
                                      8, 2, 0, 6, 2, 14, 18, 12, 14, 14, 13, 5, 18, 13, 9, 13, 12, 5, 13, 19
                                     };
 #define SNOVA_INIT
 
-#elif SNOVA_l == 4 && SNOVA_q == 19
+#elif SNOVA_l == 4 && SNOVA_q == 19 && !FIXED_ABQ
 static uint16_t gf_S[SNOVA_l * SNOVA_l2] = {1, 0,  0,  0, 0,  1, 0, 0, 0, 0,  1,  0,  0, 0,  0, 1,  1, 2,  3, 0, 2,  3,
                                             0, 1,  3,  0, 1,  2, 0, 1, 2, 15, 14, 8,  6, 8,  8, 14, 8, 18, 6, 8, 14, 13,
                                             8, 18, 13, 2, 10, 3, 7, 7, 3, 0,  11, 15, 7, 11, 1, 3,  7, 15, 3, 17
-                                           };
-#define SNOVA_INIT
-
-#elif SNOVA_l == 4 && SNOVA_q == 11
-static uint16_t gf_S[SNOVA_l * SNOVA_l2] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 2, 3, 1, 2,
-                                            3, 0, 2, 3, 0, 1, 3, 0, 1, 6, 3, 8, 6, 9, 8, 3, 8, 6, 6, 8, 3, 1,
-                                            9, 6, 1, 2, 3, 4, 6, 3, 4, 5, 9, 2, 6, 9, 4, 5, 3, 2, 5, 7
                                            };
 #define SNOVA_INIT
 
@@ -102,6 +95,7 @@ static void gen_S_array(void) {
 		gf_S[i1 * SNOVA_l + i1] = 1;
 	}
 
+#if SNOVA_l > 1
 	// Set S^1, the irreducible S matrix
 	for (int i1 = 0; i1 < SNOVA_l; i1++)
 		for (int j1 = 0; j1 < SNOVA_l; j1++) {
@@ -119,15 +113,39 @@ static void gen_S_array(void) {
 				gf_S[si * SNOVA_l2 + i1 * SNOVA_l + j1] = sum % SNOVA_q;
 			}
 	}
+#endif
 }
 
 static int first_time = 1;
 
+#if FIXED_ABQ
+/**
+ * Fix the ABQ to constants
+ */
+static uint8_t fixed_abq[SNOVA_o * SNOVA_alpha * (SNOVA_r2 + SNOVA_lr + 2 * SNOVA_l)] = {0};
+static void convert_bytes_to_GF(gf_t* gf_array, const uint8_t* byte_array, size_t num);
+
+static void gen_fixed_ABQ(const char* abq_seed) {
+	uint8_t rng_out[SNOVA_o * SNOVA_alpha * (SNOVA_r2 + SNOVA_lr + 2 * SNOVA_l)] = {0};
+
+	shake256(rng_out, SNOVA_o * SNOVA_alpha * (SNOVA_r2 + SNOVA_lr + 2 * SNOVA_l), (uint8_t*)abq_seed, strlen(abq_seed));
+	convert_bytes_to_GF(fixed_abq, rng_out, SNOVA_o * SNOVA_alpha * (SNOVA_r2 + SNOVA_lr + 2 * SNOVA_l));
+}
+
+#define SNOVA_INIT                  \
+    if (first_time) {               \
+        first_time = 0;             \
+        gen_S_array();              \
+        gen_fixed_ABQ("SNOVA_ABQ"); \
+    }
+
+#else
 #define SNOVA_INIT      \
     if (first_time) {   \
         first_time = 0; \
         gen_S_array();  \
     }
+#endif
 #endif
 
 /**
@@ -367,12 +385,11 @@ static void expand_public(gf_t* P_matrix, const uint8_t* seed) {
 #endif
 }
 
-static void hash_combined(uint8_t* hash_out, const uint8_t* digest, size_t len_digest, const uint8_t* pk_seed,
-                          const uint8_t *salt) {
+static void hash_combined(uint8_t* hash_out, const uint8_t* digest, const uint8_t* pk_seed, const uint8_t *salt) {
 	shake_t state;
 	shake256_init(&state);
 	shake_absorb(&state, pk_seed, SEED_LENGTH_PUBLIC);
-	shake_absorb(&state, digest, len_digest);
+	shake_absorb(&state, digest, BYTES_DIGEST);
 	shake_absorb(&state, salt, BYTES_SALT);
 	shake_finalize(&state);
 	shake_squeeze(hash_out, BYTES_HASH, &state);
@@ -645,6 +662,10 @@ int SNOVA_NAMESPACE(sk_expand)(expanded_SK* skx, const uint8_t* sk) {
 	gf_t* q1 = aptr + 2 * SNOVA_o * SNOVA_alpha * SNOVA_l2;
 	gf_t* q2 = q1 + SNOVA_o * SNOVA_alpha * SNOVA_l;
 
+#if FIXED_ABQ
+	memcpy(aptr, fixed_abq, sizeof(fixed_abq));
+#endif
+
 	for (int idx = 0; idx < SNOVA_o * SNOVA_alpha; idx++) {
 		be_invertible_by_add_aS(&Am[idx * SNOVA_l2], &aptr[idx * SNOVA_l2]);
 		be_invertible_by_add_aS(&Bm[idx * SNOVA_l2], &bptr[idx * SNOVA_l2]);
@@ -673,14 +694,14 @@ int SNOVA_NAMESPACE(sk_expand)(expanded_SK* skx, const uint8_t* sk) {
 /**
  * Optimized version of Sign. Deterministic using the salt provided
  */
-int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* digest, size_t len_digest, const uint8_t* salt) {
+int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* digest, const uint8_t* salt) {
 	SNOVA_INIT
 
 	// Calculate message has of size l^2o
 	gf_t hash_in_GF16[GF16_HASH];
 
 	uint8_t sign_hashb[BYTES_HASH];
-	hash_combined(sign_hashb, digest, len_digest, skx->sk_seed, salt);
+	hash_combined(sign_hashb, digest, skx->sk_seed, salt);
 	expand_gf(hash_in_GF16, sign_hashb, GF16_HASH);
 
 	// Find a solution for T.X
@@ -710,7 +731,8 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* d
 
 		shake256_init(&v_instance);
 		shake_absorb(&v_instance, skx->sk_seed + SEED_LENGTH_PUBLIC, SEED_LENGTH_PRIVATE);
-		shake_absorb(&v_instance, sign_hashb, BYTES_HASH);
+		shake_absorb(&v_instance, digest, BYTES_DIGEST);
+		shake_absorb(&v_instance, salt, BYTES_SALT);
 		shake_absorb(&v_instance, &num_sign, 1);
 		shake_finalize(&v_instance);
 		shake_squeeze(vinegar_in_byte, NUM_GEN_SEC_BYTES, &v_instance);
@@ -1360,6 +1382,10 @@ int SNOVA_NAMESPACE(pk_expand)(expanded_PK* pkx, const uint8_t* pk) {
 	gf_t* q1 = A + 2 * SNOVA_o * SNOVA_alpha * SNOVA_l2;
 	gf_t* q2 = q1 + SNOVA_o * SNOVA_alpha * SNOVA_l;
 
+#if FIXED_ABQ
+	memcpy(A, fixed_abq, sizeof(fixed_abq));
+#endif
+
 	for (int idx = 0; idx < SNOVA_o * SNOVA_alpha; idx++) {
 		be_invertible_by_add_aS(&(pkx->Am[idx * SNOVA_l2]), &A[idx * SNOVA_l2]);
 		be_invertible_by_add_aS(&(pkx->Bm[idx * SNOVA_l2]), &B[idx * SNOVA_l2]);
@@ -1383,7 +1409,7 @@ int SNOVA_NAMESPACE(pk_expand)(expanded_PK* pkx, const uint8_t* pk) {
 /**
  * Optimized version of verify.
  */
-int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const uint8_t* digest, size_t len_digest) {
+int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const uint8_t* digest) {
 	SNOVA_INIT
 
 	gf_t signature_in_GF[NUMGF_SIGNATURE];
@@ -1546,7 +1572,7 @@ int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const ui
 	uint8_t signed_bytes[BYTES_HASH];
 	uint8_t signed_gf[GF16_HASH] = {0};
 	const uint8_t *salt = sig + BYTES_SIGNATURE - BYTES_SALT;
-	hash_combined(signed_bytes, digest, len_digest, pkx->pk_seed, salt);
+	hash_combined(signed_bytes, digest, pkx->pk_seed, salt);
 	expand_gf(signed_gf, signed_bytes, GF16_HASH);
 
 	for (int i = 0; i < GF16_HASH; ++i) {

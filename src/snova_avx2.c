@@ -2,7 +2,11 @@
 
 #if SNOVA_q == 16
 #if SNOVA_l == 4
+#if defined(SNOVA_r) && (SNOVA_r != SNOVA_l)
+#include "snova_gfni_rect.c"
+#else
 #include "snova_opt_16.c"
+#endif
 #else
 #include "snova_avx2_16.c"
 #endif
