@@ -206,7 +206,7 @@ int main(void) {
 		t1[i * 2 + 1] = get_cycles();
 
 		t2[i * 2] = get_cycles();
-		r += SNOVA_NAMESPACE(sign)(&skx_d, sm, digest, BYTES_DIGEST, salt);
+		r += SNOVA_NAMESPACE(sign)(&skx_d, sm, digest, salt);
 		t2[i * 2 + 1] = get_cycles();
 
 		t3[i * 2] = get_cycles();
@@ -214,7 +214,7 @@ int main(void) {
 		t3[i * 2 + 1] = get_cycles();
 
 		t4[i * 2] = get_cycles();
-		r += SNOVA_NAMESPACE(verify)(&pkx, sm, digest, BYTES_DIGEST);
+		r += SNOVA_NAMESPACE(verify)(&pkx, sm, digest);
 		t4[i * 2 + 1] = get_cycles();
 #endif
 
@@ -233,15 +233,15 @@ int main(void) {
 #ifdef DETAILS
 		printf("%s", CRYPTO_ALGNAME);
 #else
-#if 0 && SNOVA_r == SNOVA_l
+#if 1 && SNOVA_r == SNOVA_l
 		printf("%s & %d & %d", CRYPTO_ALGNAME, CRYPTO_PUBLICKEYBYTES, CRYPTO_BYTES);
 #else
 #ifdef AESCTR
-		printf("(%d,%d,%d,%d,%d,%d,%d) AES & %d & %d", SNOVA_v, SNOVA_o, SNOVA_q, SNOVA_l, SNOVA_r, SNOVA_m1,
-		       SNOVA_alpha, CRYPTO_PUBLICKEYBYTES, CRYPTO_BYTES);
+		printf("(%d,%d,%d,%d,%d,%d,%d) AES & %d & %d", SNOVA_v, SNOVA_o, SNOVA_q, SNOVA_l, SNOVA_r, SNOVA_m1, SNOVA_alpha,
+		       CRYPTO_PUBLICKEYBYTES, CRYPTO_BYTES);
 #else
-		printf("(%d,%d,%d,%d,%d,%d,%d) & %d & %d", SNOVA_v, SNOVA_o, SNOVA_q, SNOVA_l, SNOVA_r, SNOVA_m1,
-		       SNOVA_alpha, CRYPTO_PUBLICKEYBYTES, CRYPTO_BYTES);
+		printf("(%d,%d,%d,%d,%d,%d,%d) & %d & %d", SNOVA_v, SNOVA_o, SNOVA_q, SNOVA_l, SNOVA_r, SNOVA_m1, SNOVA_alpha,
+		       CRYPTO_PUBLICKEYBYTES, CRYPTO_BYTES);
 #endif
 #endif
 #endif

@@ -1,20 +1,30 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * AVX2 implementation
+ * Implementation optimized for rectangular signatures. Uses AVX2 vectorization if available.
  *
  * Copyright (c) 2025 SNOVA TEAM
  */
 
+#ifndef USE_AVX2
+#define USE_AVX2 __AVX2__
+#endif
+
 #if __AVX2__
 #include <immintrin.h>
 #endif
+
 #include <stdalign.h>
 #include <stdint.h>
 #include <string.h>
 
 #include "snova.h"
 #include "symmetric.h"
+
+#if SNOVA_q == 16
+#error "SNOVA_q == 16"
+#include "stop"
+#endif
 
 typedef uint8_t gf_t;
 
@@ -61,21 +71,6 @@ static uint16_t ct_gf_inverse(uint16_t val) {
 
 #define gf_S SNOVA_NAMESPACE(Smat)
 
-#if SNOVA_l == 4 && SNOVA_q == 23
-uint16_t gf_S[SNOVA_l * SNOVA_l2] = {1, 0, 0, 0, 0, 1,  0,  0,  0,  0,  1,  0, 0,  0,  0, 1,  1,  2, 3,  0, 2,  3,
-                                     0, 1, 3, 0, 1, 2,  0,  1,  2,  22, 14, 8, 6,  8,  8, 14, 8,  2, 6,  8, 14, 0,
-                                     8, 2, 0, 6, 2, 14, 18, 12, 14, 14, 13, 5, 18, 13, 9, 13, 12, 5, 13, 19
-                                    };
-#define SNOVA_INIT
-
-#elif SNOVA_l == 4 && SNOVA_q == 19
-static uint16_t gf_S[SNOVA_l * SNOVA_l2] = {1, 0,  0,  0, 0,  1, 0, 0, 0, 0,  1,  0,  0, 0,  0, 1,  1, 2,  3, 0, 2,  3,
-                                            0, 1,  3,  0, 1,  2, 0, 1, 2, 15, 14, 8,  6, 8,  8, 14, 8, 18, 6, 8, 14, 13,
-                                            8, 18, 13, 2, 10, 3, 7, 7, 3, 0,  11, 15, 7, 11, 1, 3,  7, 15, 3, 17
-                                           };
-#define SNOVA_INIT
-
-#else
 uint16_t gf_S[SNOVA_l * SNOVA_l2] = {0};
 
 static void gen_S_array(void) {
@@ -135,7 +130,6 @@ static void gen_fixed_ABQ(const char* abq_seed) {
         first_time = 0; \
         gen_S_array();  \
     }
-#endif
 #endif
 
 /**
@@ -367,12 +361,11 @@ static void expand_public(gf_t* P_matrix, const uint8_t* seed) {
 	}
 }
 
-static void hash_combined(uint8_t* hash_out, const uint8_t* digest, size_t len_digest, const uint8_t* pk_seed,
-                          const uint8_t *salt) {
+static void hash_combined(uint8_t* hash_out, const uint8_t* digest, const uint8_t* pk_seed, const uint8_t* salt) {
 	shake_t state;
 	shake256_init(&state);
 	shake_absorb(&state, pk_seed, SEED_LENGTH_PUBLIC);
-	shake_absorb(&state, digest, len_digest);
+	shake_absorb(&state, digest, BYTES_DIGEST);
 	shake_absorb(&state, salt, BYTES_SALT);
 	shake_finalize(&state);
 	shake_squeeze(hash_out, BYTES_HASH, &state);
@@ -641,14 +634,14 @@ int SNOVA_NAMESPACE(sk_expand)(expanded_SK* skx, const uint8_t* sk) {
 /**
  * Optimized version of Sign. Deterministic using the salt provided
  */
-int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* digest, size_t len_digest, const uint8_t* salt) {
+int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* digest, const uint8_t* salt) {
 	SNOVA_INIT
 
 	// Calculate message has of size l^2o
 	gf_t hash_in_GF16[GF16_HASH];
 
 	uint8_t sign_hashb[BYTES_HASH];
-	hash_combined(sign_hashb, digest, len_digest, skx->sk_seed, salt);
+	hash_combined(sign_hashb, digest, skx->sk_seed, salt);
 	expand_gf(hash_in_GF16, sign_hashb, GF16_HASH);
 
 	// Find a solution for T.X
@@ -678,7 +671,8 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* d
 
 		shake256_init(&v_instance);
 		shake_absorb(&v_instance, skx->sk_seed + SEED_LENGTH_PUBLIC, SEED_LENGTH_PRIVATE);
-		shake_absorb(&v_instance, sign_hashb, BYTES_HASH);
+		shake_absorb(&v_instance, digest, BYTES_DIGEST);
+		shake_absorb(&v_instance, salt, BYTES_SALT);
 		shake_absorb(&v_instance, &num_sign, 1);
 		shake_finalize(&v_instance);
 		shake_squeeze(vinegar_in_byte, NUM_GEN_SEC_BYTES, &v_instance);
@@ -712,7 +706,7 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* d
 		alignas(32) uint16_t sum_t1[SNOVA_m1 * SNOVA_l * SNOVA_r * SNOVA_lr32] = {0};
 
 		// Right
-#if __AVX2__
+#if USE_AVX2
 		for (int mi = 0; mi < SNOVA_m1; ++mi)
 			for (int nj = 0; nj < SNOVA_v; ++nj)
 				for (int ni = 0; ni < SNOVA_v; ++ni)
@@ -1205,10 +1199,15 @@ int SNOVA_NAMESPACE(pk_expand)(expanded_PK* pkx, const uint8_t* pk) {
 	return 0;
 }
 
+#if __ARM_NEON
+#undef SNOVA_lr32
+#define SNOVA_lr32 SNOVA_lr
+#endif
+
 /**
  * Optimized version of verify.
  */
-int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const uint8_t* digest, size_t len_digest) {
+int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const uint8_t* digest) {
 	SNOVA_INIT
 
 	gf_t signature_in_GF[NUMGF_SIGNATURE];
@@ -1274,7 +1273,7 @@ int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const ui
 			alignas(32) uint16_t sum_t0[SNOVA_l * SNOVA_lr32] = {0};
 
 			// Right
-#if __AVX2__
+#if USE_AVX2
 			for (int nj = 0; nj < SNOVA_n; ++nj)
 				for (int i1 = 0; i1 < SNOVA_l; i1++)
 					for (int b1 = 0; b1 < SNOVA_lr16; ++b1)
@@ -1301,7 +1300,7 @@ int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const ui
 			}
 
 			// Left, transposed whipped_sig
-#if __AVX2__
+#if USE_AVX2
 			for (int a1 = 0; a1 < SNOVA_l; ++a1)
 				for (int k1 = 0; k1 < SNOVA_l; k1++)
 					for (int i1 = 0; i1 < SNOVA_r; i1++)
@@ -1401,7 +1400,7 @@ int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const ui
 	uint8_t signed_bytes[BYTES_HASH];
 	uint8_t signed_gf[GF16_HASH] = {0};
 	const uint8_t *salt = sig + BYTES_SIGNATURE - BYTES_SALT;
-	hash_combined(signed_bytes, digest, len_digest, pkx->pk_seed, salt);
+	hash_combined(signed_bytes, digest, pkx->pk_seed, salt);
 	expand_gf(signed_gf, signed_bytes, GF16_HASH);
 
 	for (int i = 0; i < GF16_HASH; ++i) {

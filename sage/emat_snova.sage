@@ -70,7 +70,6 @@ n = v + o
 MAYO = l == 1
 
 ASYMMETRIC_PUBMAT = q == 16
-ROUND2_KAT = l == r and q == 16
 
 # Set GF
 
@@ -191,13 +190,10 @@ def hash_combined(msg, pk_seed, salt):
     if MAYO:
         dgst = hashlib.shake_256(msg).digest(32)
         state.update(dgst)
-    elif ROUND2_KAT:
+    else:
         state.update(pk_seed)
         dgst = hashlib.shake_256(msg).digest(64)
         state.update(dgst)
-    else:
-        state.update(pk_seed)
-        state.update(msg)
     state.update(salt)
     res = state.digest(BYTES_HASH)
     res_gf = expand_gf(res, GF16_HASH)
@@ -208,7 +204,7 @@ def hash_combined(msg, pk_seed, salt):
         # Necessary to be compliant to KATs from C-Reference
         msg_hash = [res_gf[mi * l * r + j1 * l + i1] for mi in range(o) for i1 in range(l) for j1 in range(r)]
 
-    return msg_hash, res
+    return msg_hash
 
 
 # XOF
@@ -323,7 +319,7 @@ def expand_public_sym(seed):
         Pm11.append(p11)
         Pm12.append(p12)
         Pm21.append(p21)
-    return Pm11, Pm12, Pm21, fixed_abq() if l < 4 else data[idx:]
+    return Pm11, Pm12, Pm21, fixed_abq() if l < 4 or q != 16 else data[idx:]
 
 
 def expand_public_asym(seed):
@@ -602,22 +598,19 @@ def sign(sk, msg, salt):
         if MAYO:
             dgst = hashlib.shake_256(msg).digest(32)
             salt_byte = hashlib.shake_256(dgst + salt + sk_seed).digest(24)
-            msg_hash, msg_bytes = hash_combined(msg, pk_seed, salt_byte)
+            msg_hash = hash_combined(msg, pk_seed, salt_byte)
             vinegar_byte = hashlib.shake_256(dgst + salt_byte + sk_seed + bytes([num_sign - 1])).digest(BYTES_GF(r * n))
             vinegar_gf = expand_gf(vinegar_byte, n * l * r)
             vinegar = matrix(GF_q, v * l, r, lambda i, j: vinegar_gf[j * v + i])
             rvec = vector([vinegar_gf[v * l * r + j1 * o * l + i1] for j1 in range(r) for i1 in range(o * l)])
         else:
             salt_byte = salt
-            msg_hash, msg_bytes = hash_combined(msg, pk_seed, salt_byte)
+            msg_hash = hash_combined(msg, pk_seed, salt_byte)
             v_state = hashlib.shake_256()
             v_state.update(sk_seed)
-            if ROUND2_KAT:
-                dgst = hashlib.shake_256(msg).digest(64)
-                v_state.update(dgst)
-                v_state.update(salt)
-            else:
-                v_state.update(msg_bytes)
+            dgst = hashlib.shake_256(msg).digest(64)
+            v_state.update(dgst)
+            v_state.update(salt)
             v_state.update(num_sign.to_bytes(1))
             vinegar_byte = v_state.digest(BYTES_GF(v * l * r))
             vinegar_gf = expand_gf(vinegar_byte, v * l * r)
@@ -734,7 +727,7 @@ def verify(pk, sig_bytes, msg):
     sig_hash = list(res)
 
     # Check against expected hash
-    msg_hash, _ = hash_combined(msg, pk_seed, salt)
+    msg_hash = hash_combined(msg, pk_seed, salt)
 
     if msg_hash != sig_hash:
         raise Exception('Verify failed')

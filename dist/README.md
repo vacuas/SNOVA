@@ -1,22 +1,18 @@
 SNOVA
 =======
-This directory contains a tool to create the recommended SNOVA 2.1 instances.
+This directory contains a tool to create the recommended SNOVA 2.2 instances.
 
-Use `make` to create `ref`, `opt`, and `avx2` directories. Use `make rsnova` to make the instances with rectangular signatures.
+Use `make` to create `ref`, `opt`, and `avx2` directories.
 
-In one of those directories use
+In one of those directories use e.g.
 ```
 make clean kat speed
 make speed
 make digest
 ```
 
-To specify the optimization explicitly use
-```
-OPT=REF make clean kat speed
-OPT=OPT make clean kat speed
-OPT=AVX2 make clean kat speed
-```
+Building SNOVA requires a C compiler and `make`.
+
 
 # KAT digests
 
