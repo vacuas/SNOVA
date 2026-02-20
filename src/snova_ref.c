@@ -67,18 +67,31 @@ static inline void gf_mat_mul_add(gf_t* a, const gf_t* b, const gf_t* c) {
 
 static inline void gf_mat_mul_add16(gf_t* a, const uint16_t* b, const gf_t* c) {
 	for (int i1 = 0; i1 < SNOVA_l; i1++)
-		for (int j1 = 0; j1 < SNOVA_l; j1++) {
+		for (int j1 = 0; j1 < SNOVA_r; j1++) {
 			gf_t sum = 0;
 			for (int k1 = 0; k1 < SNOVA_l; k1++) {
-				gf_set_add(&sum, gf_mult(b[i1 * SNOVA_l + k1], c[k1 * SNOVA_l + j1]));
+				gf_set_add(&sum, gf_mult(b[i1 * SNOVA_l + k1], c[k1 * SNOVA_r + j1]));
 			}
-			gf_set_add(&a[i1 * SNOVA_l + j1], sum);
+			gf_set_add(&a[i1 * SNOVA_r + j1], sum);
+		}
+}
+
+static inline void gf_mat_mul_add_lr(gf_t* a, const gf_t* b, const gf_t* c, int ad, int bd, int cd) {
+	for (int i1 = 0; i1 < ad; i1++)
+		for (int j1 = 0; j1 < cd; j1++) {
+			gf_t sum = 0;
+			for (int k1 = 0; k1 < bd; k1++) {
+				gf_set_add(&sum, gf_mult(b[i1 * bd + k1], c[k1 * cd + j1]));
+			}
+			gf_set_add(&a[i1 * cd + j1], sum);
 		}
 }
 
 static inline gf_t gf_mat_det(gf_t* a) {
 	gf_t det = 0;
-#if SNOVA_l == 2
+#if SNOVA_l == 1
+	det = a[0];
+#elif SNOVA_l == 2
 	det = gf_sub(gf_mult(a[0], a[3]), gf_mult(a[1], a[2]));
 #elif SNOVA_l == 3
 	det = gf_mult(a[0], gf_sub(gf_mult(a[4], a[8]), gf_mult(a[5], a[7])));
@@ -192,12 +205,13 @@ static void gen_S_array(void) {
 	for (int i1 = 0; i1 < SNOVA_l; i1++) {
 		gf_S[i1 * SNOVA_l + i1] = 1;
 	}
-
+#if SNOVA_l > 1
 	set_S(&gf_S[1 * SNOVA_l2]);
 
 	for (int i1 = 2; i1 < SNOVA_l; i1++) {
 		gf_mat_mul(&gf_S[i1 * SNOVA_l2], &gf_S[1 * SNOVA_l2], &gf_S[(i1 - 1) * SNOVA_l2]);
 	}
+#endif
 }
 
 static int first_time = 1;
@@ -307,7 +321,7 @@ static void compress_pk(uint8_t* pk, const gf_t* P22) {
 	gf_t P22c[NUMGF_PK] = {0};
 	gf_t* curval = &P22c[0];
 
-	for (int mi = 0; mi < SNOVA_o; ++mi)
+	for (int mi = 0; mi < SNOVA_m1; ++mi)
 		for (int ni = 0; ni < SNOVA_o; ++ni) {
 			for (int i1 = 0; i1 < SNOVA_l; i1++) {
 				for (int j1 = i1; j1 < SNOVA_l; j1++) {
@@ -338,7 +352,7 @@ static int expand_pk(gf_t* P22, const uint8_t* pk) {
 
 	int res = expand_gf(P22c, pk, NUMGF_PK);
 
-	for (int mi = 0; mi < SNOVA_o; ++mi)
+	for (int mi = 0; mi < SNOVA_m1; ++mi)
 		for (int ni = 0; ni < SNOVA_o; ++ni)
 			for (int i1 = 0; i1 < SNOVA_l; i1++) {
 				for (int j1 = i1; j1 < SNOVA_l; j1++) {
@@ -376,13 +390,13 @@ void expand_public(gf_t* P_matrix, const uint8_t* seed) {
 
 	// Make symmetric
 	gf_t* P11 = P_matrix;
-	gf_t* P12 = P_matrix + SNOVA_o * SNOVA_v * SNOVA_v * SNOVA_l2;
-	gf_t* P21 = P_matrix + SNOVA_o * SNOVA_v * SNOVA_n * SNOVA_l2;
-	gf_t* abq = P21 + SNOVA_o * SNOVA_o * SNOVA_v * SNOVA_l2;
+	gf_t* P12 = P_matrix + SNOVA_m1 * SNOVA_v * SNOVA_v * SNOVA_l2;
+	gf_t* P21 = P_matrix + SNOVA_m1 * SNOVA_v * SNOVA_n * SNOVA_l2;
+	gf_t* abq = P21 + SNOVA_m1 * SNOVA_o * SNOVA_v * SNOVA_l2;
 
 	gf_t* curval = &pk_gf[0];
 
-	for (int mi = 0; mi < SNOVA_o; ++mi)
+	for (int mi = 0; mi < SNOVA_m1; ++mi)
 		for (int ni = 0; ni < SNOVA_v; ++ni) {
 			for (int i1 = 0; i1 < SNOVA_l; i1++)
 				for (int j1 = i1; j1 < SNOVA_l; j1++) {
@@ -408,7 +422,7 @@ void expand_public(gf_t* P_matrix, const uint8_t* seed) {
 					}
 		}
 
-	for (int idx = 0; idx < SNOVA_o * SNOVA_alpha * 2 * (SNOVA_l2 + SNOVA_l); idx++) {
+	for (int idx = 0; idx < SNOVA_o * SNOVA_alpha * (SNOVA_r2 + SNOVA_lr + 2 * SNOVA_l); idx++) {
 		abq[idx] = curval[idx];
 	}
 #else
@@ -417,11 +431,11 @@ void expand_public(gf_t* P_matrix, const uint8_t* seed) {
 #endif
 }
 
-static void hash_combined(uint8_t* hash_out, const uint8_t* m, size_t mlen, const uint8_t* pk_seed, const uint8_t* salt) {
+static void hash_combined(uint8_t* hash_out, const uint8_t* digest, const uint8_t* pk_seed, const uint8_t* salt) {
 	shake_t state;
 	shake256_init(&state);
 	shake_absorb(&state, pk_seed, SEED_LENGTH_PUBLIC);
-	shake_absorb(&state, m, mlen);
+	shake_absorb(&state, digest, BYTES_DIGEST);
 	shake_absorb(&state, salt, BYTES_SALT);
 	shake_finalize(&state);
 	shake_squeeze(hash_out, BYTES_HASH, &state);
@@ -491,31 +505,34 @@ static void expand_T12(gf_t* T12, const uint8_t* seed) {
 /**
  * Ensure that a matrix is invertible by adding multiples of S
  */
-static inline void be_invertible_by_add_aS(gf_t* mat, const gf_t* orig) {
-	memcpy(mat, orig, SNOVA_l2);
-	if (gf_mat_det(mat) == 0) {
-		for (gf_t f1 = 1; f1 < SNOVA_q; f1++) {
-			for (int i1 = 0; i1 < SNOVA_l2; i1++) {
-				gf_set_add(&mat[i1], gf_mult(f1, gf_S[SNOVA_l2 + i1]));
-			}
-			if (gf_mat_det(mat) != 0) {
-				break;
+static inline void be_invertible_by_add_aS(gf_t* mat, const gf_t* orig, const int l1, const int l2) {
+	memcpy(mat, orig, l1 * l2);
+#if SNOVA_l > 1
+	if ((l1 == SNOVA_l) && (l2 == SNOVA_l))
+		if (gf_mat_det(mat) == 0) {
+			for (gf_t f1 = 1; f1 < SNOVA_q; f1++) {
+				for (int i1 = 0; i1 < SNOVA_l2; i1++) {
+					gf_set_add(&mat[i1], gf_mult(f1, gf_S[SNOVA_l2 + i1]));
+				}
+				if (gf_mat_det(mat) != 0) {
+					break;
+				}
 			}
 		}
-	}
+#endif
 }
 
 /**
  * Use last part of the P matrix to establish ABQ
  */
 static void gen_ABQ(gf_t* A, gf_t* Am, gf_t* Bm, gf_t* Q1m, gf_t* Q2m) {
-	gf_t* B = A + SNOVA_o * SNOVA_alpha * SNOVA_l2;
-	gf_t* q1 = B + SNOVA_o * SNOVA_alpha * SNOVA_l2;
+	gf_t* B = A + SNOVA_o * SNOVA_alpha * SNOVA_r2;
+	gf_t* q1 = B + SNOVA_o * SNOVA_alpha * SNOVA_lr;
 	gf_t* q2 = q1 + SNOVA_o * SNOVA_alpha * SNOVA_l;
 
 	for (size_t idx = 0; idx < SNOVA_o * SNOVA_alpha; idx++) {
-		be_invertible_by_add_aS(&Am[idx * SNOVA_l2], &A[idx * SNOVA_l2]);
-		be_invertible_by_add_aS(&Bm[idx * SNOVA_l2], &B[idx * SNOVA_l2]);
+		be_invertible_by_add_aS(&Am[idx * SNOVA_r2], &A[idx * SNOVA_r2], SNOVA_r, SNOVA_r);
+		be_invertible_by_add_aS(&Bm[idx * SNOVA_lr], &B[idx * SNOVA_lr], SNOVA_r, SNOVA_l);
 		gen_a_FqS(&Q1m[idx * SNOVA_l2], &q1[idx * SNOVA_l]);
 		gen_a_FqS(&Q2m[idx * SNOVA_l2], &q2[idx * SNOVA_l]);
 	}
@@ -525,13 +542,13 @@ static void gen_ABQ(gf_t* A, gf_t* Am, gf_t* Bm, gf_t* Q1m, gf_t* Q2m) {
  * Fix the ABQ to constants
  */
 #if FIXED_ABQ
-uint8_t fixed_abq[2 * SNOVA_o * SNOVA_alpha * (SNOVA_l2 + SNOVA_l)] = {0};
+uint8_t fixed_abq[SNOVA_o * SNOVA_alpha * (SNOVA_r2 + SNOVA_lr + 2 * SNOVA_l)] = {0};
 
 static void gen_fixed_ABQ(const char* abq_seed) {
-	uint8_t rng_out[2 * SNOVA_o * SNOVA_alpha * (SNOVA_l2 + SNOVA_l)] = {0};
+	uint8_t rng_out[SNOVA_o * SNOVA_alpha * (SNOVA_r2 + SNOVA_lr + 2 * SNOVA_l)] = {0};
 
-	shake256(rng_out, 2 * SNOVA_o * SNOVA_alpha * (SNOVA_l2 + SNOVA_l), (uint8_t*)abq_seed, strlen(abq_seed));
-	convert_bytes_to_GF(fixed_abq, rng_out, 2 * SNOVA_o * SNOVA_alpha * (SNOVA_l2 + SNOVA_l));
+	shake256(rng_out, SNOVA_o * SNOVA_alpha * (SNOVA_r2 + SNOVA_lr + 2 * SNOVA_l), (uint8_t*)abq_seed, strlen(abq_seed));
+	convert_bytes_to_GF(fixed_abq, rng_out, SNOVA_o * SNOVA_alpha * (SNOVA_r2 + SNOVA_lr + 2 * SNOVA_l));
 }
 #endif
 
@@ -547,7 +564,7 @@ int SNOVA_NAMESPACE(genkeys)(uint8_t* pk, uint8_t* sk, const uint8_t* seed) {
 	 * Gen T12 matrix
 	 */
 	gf_t T12[SNOVA_o * SNOVA_v * SNOVA_l2];
-	gf_t P22[SNOVA_o * SNOVA_o * SNOVA_o * SNOVA_l2] = {0};
+	gf_t P22[SNOVA_m1 * SNOVA_o * SNOVA_o * SNOVA_l2] = {0};
 
 	expand_T12(T12, seed + SEED_LENGTH_PUBLIC);
 
@@ -562,11 +579,11 @@ int SNOVA_NAMESPACE(genkeys)(uint8_t* pk, uint8_t* sk, const uint8_t* seed) {
 	 * Calculate F12 matrix, use P11
 	 */
 	gf_t* P11 = P_matrix;
-	gf_t* P12 = P_matrix + SNOVA_o * SNOVA_v * SNOVA_v * SNOVA_l2;
-	gf_t* P21 = P_matrix + SNOVA_o * SNOVA_v * SNOVA_n * SNOVA_l2;
-	gf_t F12[SNOVA_o * SNOVA_v * SNOVA_o * SNOVA_l2] = {0};
+	gf_t* P12 = P_matrix + SNOVA_m1 * SNOVA_v * SNOVA_v * SNOVA_l2;
+	gf_t* P21 = P_matrix + SNOVA_m1 * SNOVA_v * SNOVA_n * SNOVA_l2;
+	gf_t F12[SNOVA_m1 * SNOVA_v * SNOVA_o * SNOVA_l2] = {0};
 
-	for (int i1 = 0; i1 < SNOVA_o; i1++) {
+	for (int i1 = 0; i1 < SNOVA_m1; i1++) {
 		for (int j1 = 0; j1 < SNOVA_v; j1++) {
 			// Squeeze P11[0..SNOVA_v * SNOVA_l2]
 			for (int idx = 0; idx < SNOVA_v; idx++) {
@@ -581,11 +598,11 @@ int SNOVA_NAMESPACE(genkeys)(uint8_t* pk, uint8_t* sk, const uint8_t* seed) {
 	}
 
 	// Use P12
-	for (int i1 = 0; i1 < SNOVA_o * SNOVA_v * SNOVA_o * SNOVA_l2; i1++) {
+	for (int i1 = 0; i1 < SNOVA_m1 * SNOVA_v * SNOVA_o * SNOVA_l2; i1++) {
 		gf_set_add(&F12[i1], P12[i1]);
 	}
 
-	for (int i1 = 0; i1 < SNOVA_o; i1++) {
+	for (int i1 = 0; i1 < SNOVA_m1; i1++) {
 		for (int idx = 0; idx < SNOVA_v; idx++) {
 			for (int k1 = 0; k1 < SNOVA_o; k1++) {
 				for (int j1 = 0; j1 < SNOVA_o; j1++) {
@@ -600,7 +617,7 @@ int SNOVA_NAMESPACE(genkeys)(uint8_t* pk, uint8_t* sk, const uint8_t* seed) {
 	/**
 	 * Calculate P22. Uses P21
 	 */
-	for (int i1 = 0; i1 < SNOVA_o; i1++) {
+	for (int i1 = 0; i1 < SNOVA_m1; i1++) {
 		for (int j1 = 0; j1 < SNOVA_o; j1++) {
 			for (int idx = 0; idx < SNOVA_v; idx++) {
 				for (int k1 = 0; k1 < SNOVA_o; k1++) {
@@ -615,7 +632,7 @@ int SNOVA_NAMESPACE(genkeys)(uint8_t* pk, uint8_t* sk, const uint8_t* seed) {
 
 #if SNOVA_q != 16
 	// Negate P22
-	for (int i1 = 0; i1 < SNOVA_o * SNOVA_o * SNOVA_o * SNOVA_l2; i1++) {
+	for (int i1 = 0; i1 < SNOVA_m1 * SNOVA_o * SNOVA_o * SNOVA_l2; i1++) {
 		P22[i1] = (SNOVA_q - P22[i1]) % SNOVA_q;
 	}
 #endif
@@ -643,8 +660,7 @@ int SNOVA_NAMESPACE(sk_expand)(expanded_SK* skx, const uint8_t* sk) {
 /**
  * Reference version of Sign. Deterministic using the salt provided
  */
-int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* digest, const size_t len_digest,
-                          const uint8_t *salt) {
+int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* digest, const uint8_t* salt) {
 	if (first_time) {
 		snova_init();
 	}
@@ -663,13 +679,13 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* d
 	 */
 	gf_t* P11 = P_matrix;
 #ifndef SYMMETRIC
-	gf_t* P12 = P_matrix + SNOVA_o * SNOVA_v * SNOVA_v * SNOVA_l2;
+	gf_t* P12 = P_matrix + SNOVA_m1 * SNOVA_v * SNOVA_v * SNOVA_l2;
 #endif
-	gf_t* P21 = P_matrix + SNOVA_o * SNOVA_v * SNOVA_n * SNOVA_l2;
+	gf_t* P21 = P_matrix + SNOVA_m1 * SNOVA_v * SNOVA_n * SNOVA_l2;
 
-	gf_t F21[SNOVA_o * SNOVA_o * SNOVA_v * SNOVA_l2] = {0};
+	gf_t F21[SNOVA_m1 * SNOVA_o * SNOVA_v * SNOVA_l2] = {0};
 
-	for (int i1 = 0; i1 < SNOVA_o; i1++) {
+	for (int i1 = 0; i1 < SNOVA_m1; i1++) {
 		for (int j1 = 0; j1 < SNOVA_v; j1++) {
 			for (int j2 = 0; j2 < SNOVA_v; j2++) {
 				for (int k1 = 0; k1 < SNOVA_o; k1++) {
@@ -682,9 +698,9 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* d
 	}
 
 #ifndef SYMMETRIC
-	gf_t F12[SNOVA_o * SNOVA_v * SNOVA_o * SNOVA_l2] = {0};
+	gf_t F12[SNOVA_m1 * SNOVA_v * SNOVA_o * SNOVA_l2] = {0};
 
-	for (int i1 = 0; i1 < SNOVA_o; i1++) {
+	for (int i1 = 0; i1 < SNOVA_m1; i1++) {
 		for (int j1 = 0; j1 < SNOVA_v; j1++) {
 			for (int j2 = 0; j2 < SNOVA_v; j2++) {
 				for (int k1 = 0; k1 < SNOVA_o; k1++) {
@@ -701,18 +717,18 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* d
 	}
 #endif
 
-	for (int i1 = 0; i1 < SNOVA_o * SNOVA_v * SNOVA_o * SNOVA_l2; i1++) {
+	for (int i1 = 0; i1 < SNOVA_m1 * SNOVA_v * SNOVA_o * SNOVA_l2; i1++) {
 		gf_set_add(&F21[i1], P21[i1]);
 	}
 
 	// Generate ABQ
-	gf_t Am[4 * SNOVA_o * SNOVA_alpha * SNOVA_l2];
-	gf_t* Bm = Am + SNOVA_o * SNOVA_alpha * SNOVA_l2;
-	gf_t* Q1 = Bm + SNOVA_o * SNOVA_alpha * SNOVA_l2;
-	gf_t* Q2 = Q1 + SNOVA_o * SNOVA_alpha * SNOVA_l2;
+	gf_t Am[SNOVA_o * SNOVA_alpha * SNOVA_r2];
+	gf_t Bm[SNOVA_o * SNOVA_alpha * SNOVA_lr];
+	gf_t Q1[SNOVA_o * SNOVA_alpha * SNOVA_l2];
+	gf_t Q2[SNOVA_o * SNOVA_alpha * SNOVA_l2];
 
-	gf_t* aptr = P_matrix + (SNOVA_o * (SNOVA_n * SNOVA_n - SNOVA_o * SNOVA_o)) * SNOVA_l2;
-	gf_t* q1 = aptr + 2 * SNOVA_o * SNOVA_alpha * SNOVA_l2;
+	gf_t* aptr = P_matrix + SNOVA_m1 * (SNOVA_v * SNOVA_v + 2 * SNOVA_v * SNOVA_o) * SNOVA_l2;
+	gf_t* q1 = aptr + SNOVA_o * SNOVA_alpha * (SNOVA_r2 + SNOVA_lr);
 	gf_t* q2 = q1 + SNOVA_o * SNOVA_alpha * SNOVA_l;
 
 #if FIXED_ABQ
@@ -724,13 +740,13 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* d
 	gf_t hash_in_GF16[GF16_HASH];
 
 	uint8_t sign_hashb[BYTES_HASH];
-	hash_combined(sign_hashb, digest, len_digest, skx->sk_seed, salt);
+	hash_combined(sign_hashb, digest, skx->sk_seed, salt);
 	expand_gf(hash_in_GF16, sign_hashb, GF16_HASH);
 
 	// Find a solution for T.X
-	gf_t gauss[SNOVA_o * SNOVA_l2][SNOVA_o * SNOVA_l2 + 1];
-	gf_t solution[SNOVA_o * SNOVA_l2] = {0};
-	gf_t signature_in_GF[SNOVA_n * SNOVA_l2] = {0};
+	gf_t gauss[SNOVA_o * SNOVA_lr][SNOVA_o * SNOVA_lr + 1];
+	gf_t solution[SNOVA_o * SNOVA_lr] = {0};
+	gf_t signature_in_GF[SNOVA_n * SNOVA_lr] = {0};
 	int flag_redo = 1;
 	uint8_t num_sign = 0;
 
@@ -750,57 +766,57 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* d
 
 		shake256_init(&v_instance);
 		shake_absorb(&v_instance, skx->sk_seed + SEED_LENGTH_PUBLIC, SEED_LENGTH_PRIVATE);
-		shake_absorb(&v_instance, digest, len_digest);
+		shake_absorb(&v_instance, digest, BYTES_DIGEST);
 		shake_absorb(&v_instance, salt, BYTES_SALT);
 		shake_absorb(&v_instance, &num_sign, 1);
 		shake_finalize(&v_instance);
 		shake_squeeze(vinegar_in_byte, NUM_GEN_SEC_BYTES, &v_instance);
 
-		expand_gf(signature_in_GF, vinegar_in_byte, SNOVA_v * SNOVA_l2);
+		expand_gf(signature_in_GF, vinegar_in_byte, SNOVA_v * SNOVA_lr);
 
 		// Calculate Fvv
-		gf_t Fvv_in_GF16Matrix[SNOVA_o * SNOVA_l2] = {0};
+		gf_t Fvv_in_GF16Matrix[SNOVA_o * SNOVA_lr] = {0};
 
 		/**
 		 * Evaluate whipped central map
 		 */
-		gf_t sum_t0[SNOVA_o * SNOVA_l * SNOVA_v * SNOVA_l2] = {0};
-		gf_t sum_t1[SNOVA_o * SNOVA_l2 * SNOVA_v * SNOVA_l2] = {0};
+		gf_t sum_t0[SNOVA_m1 * SNOVA_l * SNOVA_v * SNOVA_lr] = {0};
+		gf_t sum_t1[SNOVA_m1 * SNOVA_l2 * SNOVA_r2] = {0};
 
 		/**
 		 * Whip signature
 		 */
-		gf_t whipped_sig[SNOVA_l * SNOVA_v * SNOVA_l2] = {0};
+		gf_t whipped_sig[SNOVA_l * SNOVA_v * SNOVA_lr] = {0};
 
 		for (int ab = 0; ab < SNOVA_l; ++ab)
 			for (int ni = 0; ni < SNOVA_v; ++ni)
 				for (int i1 = 0; i1 < SNOVA_l; i1++)
-					for (int j1 = 0; j1 < SNOVA_l; j1++)
+					for (int j1 = 0; j1 < SNOVA_r; j1++)
 						for (int k1 = 0; k1 < SNOVA_l; k1++)
-							gf_set_add(&whipped_sig[(ab * SNOVA_v + ni) * SNOVA_l2 + i1 * SNOVA_l + j1],
+							gf_set_add(&whipped_sig[(ab * SNOVA_v + ni) * SNOVA_lr + i1 * SNOVA_r + j1],
 							           gf_mult(gf_S[ab * SNOVA_l2 + i1 * SNOVA_l + k1],
-							                   signature_in_GF[ni * SNOVA_l2 + k1 * SNOVA_l + j1]));
+							                   signature_in_GF[ni * SNOVA_lr + k1 * SNOVA_r + j1]));
 
 		// Right
-		for (int mi = 0; mi < SNOVA_o; ++mi) {
+		for (int mi = 0; mi < SNOVA_m1; ++mi) {
 			for (int ni = 0; ni < SNOVA_v; ++ni)
 				for (int b1 = 0; b1 < SNOVA_l; ++b1)
 					for (int nj = 0; nj < SNOVA_v; ++nj)
-						gf_mat_mul_add(&sum_t0[((mi * SNOVA_l + b1) * SNOVA_v + ni) * SNOVA_l2],
-						               &P11[((mi * SNOVA_v + ni) * SNOVA_v + nj) * SNOVA_l2],
-						               &whipped_sig[(b1 * SNOVA_v + nj) * SNOVA_l2]);
+						gf_mat_mul_add_lr(&sum_t0[((mi * SNOVA_l + b1) * SNOVA_v + ni) * SNOVA_lr],
+						                  &P11[((mi * SNOVA_v + ni) * SNOVA_v + nj) * SNOVA_l2],
+						                  &whipped_sig[(b1 * SNOVA_v + nj) * SNOVA_lr], SNOVA_l, SNOVA_l, SNOVA_r);
 
 			// Left, transposed whipped_sig
 			for (int a1 = 0; a1 < SNOVA_l; ++a1)
 				for (int b1 = 0; b1 < SNOVA_l; ++b1)
 					for (int ni = 0; ni < SNOVA_v; ++ni)
-						for (int i1 = 0; i1 < SNOVA_l; i1++)
-							for (int j1 = 0; j1 < SNOVA_l; j1++)
+						for (int i1 = 0; i1 < SNOVA_r; i1++)
+							for (int j1 = 0; j1 < SNOVA_r; j1++)
 								for (int k1 = 0; k1 < SNOVA_l; k1++)
 									gf_set_add(
-									    &sum_t1[(mi * SNOVA_l2 + a1 * SNOVA_l + b1) * SNOVA_l2 + i1 * SNOVA_l + j1],
-									    gf_mult(whipped_sig[(a1 * SNOVA_v + ni) * SNOVA_l2 + k1 * SNOVA_l + i1],
-									            sum_t0[((mi * SNOVA_l + b1) * SNOVA_v + ni) * SNOVA_l2 + k1 * SNOVA_l + j1]));
+									    &sum_t1[(mi * SNOVA_l2 + a1 * SNOVA_l + b1) * SNOVA_r2 + i1 * SNOVA_r + j1],
+									    gf_mult(whipped_sig[(a1 * SNOVA_v + ni) * SNOVA_lr + k1 * SNOVA_r + i1],
+									            sum_t0[((mi * SNOVA_l + b1) * SNOVA_v + ni) * SNOVA_lr + k1 * SNOVA_r + j1]));
 		}
 
 		/**
@@ -810,43 +826,45 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* d
 			for (int alpha = 0; alpha < SNOVA_alpha; ++alpha) {
 				int mi_prime = i_prime(mi, alpha);
 
-				gf_t gf16m_temp1[SNOVA_l2] = {0};
-				gf_t gf16m_temp2[SNOVA_l2];
+				gf_t gf16m_temp1[SNOVA_r2] = {0};
+				gf_t gf16m_temp2[SNOVA_lr] = {0};
 
 				// apply q1 and q2
 				for (int a1 = 0; a1 < SNOVA_l; ++a1) {
-					gf_t sumb[SNOVA_l2] = {0};
+					gf_t sumb[SNOVA_r2] = {0};
 
 					for (int b1 = 0; b1 < SNOVA_l; ++b1)
-						for (int i1 = 0; i1 < SNOVA_l; i1++)
-							for (int j1 = 0; j1 < SNOVA_l; j1++)
+						for (int i1 = 0; i1 < SNOVA_r; i1++)
+							for (int j1 = 0; j1 < SNOVA_r; j1++)
 								gf_set_add(
-								    &sumb[i1 * SNOVA_l + j1],
-								    gf_mult(sum_t1[(mi_prime * SNOVA_l2 + a1 * SNOVA_l + b1) * SNOVA_l2 + i1 * SNOVA_l + j1],
+								    &sumb[i1 * SNOVA_r + j1],
+								    gf_mult(sum_t1[(mi_prime * SNOVA_l2 + a1 * SNOVA_l + b1) * SNOVA_r2 + i1 * SNOVA_r + j1],
 								            q2[(mi * SNOVA_alpha + alpha) * SNOVA_l + b1]));
 
-					for (int i1 = 0; i1 < SNOVA_l; i1++)
-						for (int j1 = 0; j1 < SNOVA_l; j1++)
-							gf_set_add(&gf16m_temp1[i1 * SNOVA_l + j1],
-							           gf_mult(sumb[i1 * SNOVA_l + j1], q1[(mi * SNOVA_alpha + alpha) * SNOVA_l + a1]));
+					for (int i1 = 0; i1 < SNOVA_r; i1++)
+						for (int j1 = 0; j1 < SNOVA_r; j1++)
+							gf_set_add(&gf16m_temp1[i1 * SNOVA_r + j1],
+							           gf_mult(sumb[i1 * SNOVA_r + j1], q1[(mi * SNOVA_alpha + alpha) * SNOVA_l + a1]));
 				}
 
 				// A and B
-				gf_mat_mul(gf16m_temp2, gf16m_temp1, &Bm[(mi * SNOVA_alpha + alpha) * SNOVA_l2]);
-				gf_mat_mul_add(&Fvv_in_GF16Matrix[mi * SNOVA_l2], &Am[(mi * SNOVA_alpha + alpha) * SNOVA_l2], gf16m_temp2);
+				gf_mat_mul_add_lr(gf16m_temp2, gf16m_temp1, &Bm[(mi * SNOVA_alpha + alpha) * SNOVA_lr], SNOVA_r, SNOVA_r,
+				                  SNOVA_l);
+				gf_mat_mul_add_lr(&Fvv_in_GF16Matrix[mi * SNOVA_lr], &Am[(mi * SNOVA_alpha + alpha) * SNOVA_r2], gf16m_temp2,
+				                  SNOVA_r, SNOVA_r, SNOVA_l);
 			}
 
 		for (int mi = 0; mi < SNOVA_o; ++mi)
 			// Set the last column of gauss matrix
-			for (int i1 = 0; i1 < SNOVA_l2; i1++) {
-				gauss[mi * SNOVA_l2 + i1][SNOVA_o * SNOVA_l2] =
-				    gf_sub(hash_in_GF16[mi * SNOVA_l2 + i1], Fvv_in_GF16Matrix[mi * SNOVA_l2 + i1]);
+			for (int i1 = 0; i1 < SNOVA_lr; i1++) {
+				gauss[mi * SNOVA_lr + i1][SNOVA_o * SNOVA_lr] =
+				    gf_sub(hash_in_GF16[mi * SNOVA_lr + i1], Fvv_in_GF16Matrix[mi * SNOVA_lr + i1]);
 			}
 
 		// Whipped F21
-		gf_t whipped_F21[SNOVA_o * SNOVA_l * SNOVA_o * SNOVA_l2] = {0};
+		gf_t whipped_F21[SNOVA_m1 * SNOVA_l * SNOVA_o * SNOVA_lr] = {0};
 #ifndef SYMMETRIC
-		gf_t whipped_F12[SNOVA_o * SNOVA_l * SNOVA_o * SNOVA_l2] = {0};
+		gf_t whipped_F12[SNOVA_m1 * SNOVA_l * SNOVA_o * SNOVA_l2] = {0};
 #else
 #define whipped_F12 whipped_F21
 #endif
@@ -855,13 +873,13 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* d
 		 * Whipped F21
 		 */
 
-		for (int mi = 0; mi < SNOVA_o; mi++) {
+		for (int mi = 0; mi < SNOVA_m1; mi++) {
 			for (int idx = 0; idx < SNOVA_o; idx++)
 				for (int b1 = 0; b1 < SNOVA_l; ++b1)
 					for (int nj = 0; nj < SNOVA_v; ++nj)
-						gf_mat_mul_add(&whipped_F21[((mi * SNOVA_l + b1) * SNOVA_o + idx) * SNOVA_l2],
-						               &F21[((mi * SNOVA_o + idx) * SNOVA_v + nj) * SNOVA_l2],
-						               &whipped_sig[(b1 * SNOVA_v + nj) * SNOVA_l2]);
+						gf_mat_mul_add_lr(&whipped_F21[((mi * SNOVA_l + b1) * SNOVA_o + idx) * SNOVA_lr],
+						                  &F21[((mi * SNOVA_o + idx) * SNOVA_v + nj) * SNOVA_l2],
+						                  &whipped_sig[(b1 * SNOVA_v + nj) * SNOVA_lr], SNOVA_l, SNOVA_l, SNOVA_r);
 
 #ifndef SYMMETRIC
 			// Transpose for F12
@@ -885,28 +903,29 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* d
 			for (int idx = 0; idx < SNOVA_o; idx++) {
 				for (int alpha = 0; alpha < SNOVA_alpha; alpha++) {
 					gf_t gf16m_temp0[SNOVA_l2] = {0};
-					gf_t gf16m_temp1[SNOVA_l2] = {0};
+					gf_t gf16m_temp1[SNOVA_lr] = {0};
 
-					gf_t X_tmp[SNOVA_l2];
+					gf_t X_tmp[SNOVA_l2] = {0};
 					int mi_prime = i_prime(mi, alpha);
 
 					for (int b1 = 0; b1 < SNOVA_l; ++b1)
-						for (int i1 = 0; i1 < SNOVA_l2; i1++)
+						for (int i1 = 0; i1 < SNOVA_lr; i1++)
 							gf_set_add(&gf16m_temp1[i1],
-							           gf_mult(whipped_F21[((mi_prime * SNOVA_l + b1) * SNOVA_o + idx) * SNOVA_l2 + i1],
+							           gf_mult(whipped_F21[((mi_prime * SNOVA_l + b1) * SNOVA_o + idx) * SNOVA_lr + i1],
 							                   q2[(mi * SNOVA_alpha + alpha) * SNOVA_l + b1]));
-					gf_mat_mul(gf16m_temp0, gf16m_temp1, &Bm[(mi * SNOVA_alpha + alpha) * SNOVA_l2]);
-					gf_mat_mul(X_tmp, &Q1[(mi * SNOVA_alpha + alpha) * SNOVA_l2], gf16m_temp0);
+					gf_mat_mul_add_lr(gf16m_temp0, gf16m_temp1, &Bm[(mi * SNOVA_alpha + alpha) * SNOVA_lr], SNOVA_l, SNOVA_r,
+					                  SNOVA_l);
+					gf_mat_mul_add(X_tmp, &Q1[(mi * SNOVA_alpha + alpha) * SNOVA_l2], gf16m_temp0);
 
-					for (int ti1 = 0; ti1 < SNOVA_l; ti1++)
+					for (int ti1 = 0; ti1 < SNOVA_r; ti1++)
 						for (int ti2 = 0; ti2 < SNOVA_l; ti2++)
 							for (int tj1 = 0; tj1 < SNOVA_l; tj1++)
-								for (int tj2 = 0; tj2 < SNOVA_l; tj2++) {
+								for (int tj2 = 0; tj2 < SNOVA_r; tj2++) {
 									int ti = ti1 * SNOVA_l + ti2;
-									int tj = tj1 * SNOVA_l + tj2;
-									gf_set_add(&gauss[mi * SNOVA_l2 + ti][idx * SNOVA_l2 + tj],
+									int tj = tj1 * SNOVA_r + tj2;
+									gf_set_add(&gauss[mi * SNOVA_lr + ti][idx * SNOVA_lr + tj],
 									           gf_mult(X_tmp[tj1 * SNOVA_l + ti2],
-									                   Am[(mi * SNOVA_alpha + alpha) * SNOVA_l2 + ti1 * SNOVA_l + tj2]));
+									                   Am[(mi * SNOVA_alpha + alpha) * SNOVA_r2 + ti1 * SNOVA_r + tj2]));
 								}
 				}
 			}
@@ -915,44 +934,47 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* d
 		for (int mi = 0; mi < SNOVA_o; mi++) {
 			for (int idx = 0; idx < SNOVA_o; idx++) {
 				for (int alpha = 0; alpha < SNOVA_alpha; alpha++) {
-					gf_t gf16m_temp0[SNOVA_l2] = {0};
-					gf_t gf16m_temp1[SNOVA_l2] = {0};
+					gf_t gf16m_temp0[SNOVA_lr] = {0};
+					gf_t gf16m_temp1[SNOVA_lr] = {0};
 
-					gf_t X_tmp[SNOVA_l2];
+					gf_t X_tmp[SNOVA_lr] = {0};
 					int mi_prime = i_prime(mi, alpha);
 
 					// Transpose
 					for (int b1 = 0; b1 < SNOVA_l; ++b1)
 						for (int i1 = 0; i1 < SNOVA_l; i1++)
-							for (int j1 = 0; j1 < SNOVA_l; j1++)
+							for (int j1 = 0; j1 < SNOVA_r; j1++)
 								gf_set_add(
 								    &gf16m_temp1[j1 * SNOVA_l + i1],
 								    gf_mult(
-								        whipped_F12[((mi_prime * SNOVA_l + b1) * SNOVA_o + idx) * SNOVA_l2 + i1 * SNOVA_l + j1],
+								        whipped_F12[((mi_prime * SNOVA_l + b1) * SNOVA_o + idx) * SNOVA_lr + i1 * SNOVA_r + j1],
 								        q1[(mi * SNOVA_alpha + alpha) * SNOVA_l + b1]));
-					gf_mat_mul(gf16m_temp0, &Am[(mi * SNOVA_alpha + alpha) * SNOVA_l2], gf16m_temp1);
-					gf_mat_mul(X_tmp, gf16m_temp0, &Q2[(mi * SNOVA_alpha + alpha) * SNOVA_l2]);
 
-					for (int ti1 = 0; ti1 < SNOVA_l; ti1++)
+					gf_mat_mul_add_lr(gf16m_temp0, &Am[(mi * SNOVA_alpha + alpha) * SNOVA_r2], gf16m_temp1, SNOVA_r, SNOVA_r,
+					                  SNOVA_l);
+					gf_mat_mul_add_lr(X_tmp, gf16m_temp0, &Q2[(mi * SNOVA_alpha + alpha) * SNOVA_l2], SNOVA_r, SNOVA_l,
+					                  SNOVA_l);
+
+					for (int ti1 = 0; ti1 < SNOVA_r; ti1++)
 						for (int ti2 = 0; ti2 < SNOVA_l; ti2++)
 							for (int tj1 = 0; tj1 < SNOVA_l; tj1++)
-								for (int tj2 = 0; tj2 < SNOVA_l; tj2++) {
+								for (int tj2 = 0; tj2 < SNOVA_r; tj2++) {
 									int ti = ti1 * SNOVA_l + ti2;
-									int tj = tj1 * SNOVA_l + tj2;
-									gf_set_add(&gauss[mi * SNOVA_l2 + ti][idx * SNOVA_l2 + tj],
+									int tj = tj1 * SNOVA_r + tj2;
+									gf_set_add(&gauss[mi * SNOVA_lr + ti][idx * SNOVA_lr + tj],
 									           gf_mult(X_tmp[ti1 * SNOVA_l + tj1],
-									                   Bm[(mi * SNOVA_alpha + alpha) * SNOVA_l2 + tj2 * SNOVA_l + ti2]));
+									                   Bm[(mi * SNOVA_alpha + alpha) * SNOVA_lr + tj2 * SNOVA_l + ti2]));
 								}
 				}
 			}
 		}
 
 		// Gaussian elimination
-		for (int i = 0; i < SNOVA_o * SNOVA_l2; ++i) {
+		for (int i = 0; i < SNOVA_o * SNOVA_lr; ++i) {
 			if (gauss[i][i] == 0) {
-				for (int j = i + 1; j < SNOVA_o * SNOVA_l2; ++j) {
+				for (int j = i + 1; j < SNOVA_o * SNOVA_lr; ++j) {
 					if (gauss[j][i] != 0) {
-						for (int k = i; k < SNOVA_o * SNOVA_l2 + 1; ++k) {
+						for (int k = i; k < SNOVA_o * SNOVA_lr + 1; ++k) {
 							gf_t t_GF16 = gauss[i][k];
 							gauss[i][k] = gauss[j][k];
 							gauss[j][k] = t_GF16;
@@ -967,14 +989,14 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* d
 			}
 
 			gf_t t_GF16 = gf_inv(gauss[i][i]);
-			for (int k = i; k < SNOVA_o * SNOVA_l2 + 1; ++k) {
+			for (int k = i; k < SNOVA_o * SNOVA_lr + 1; ++k) {
 				gauss[i][k] = gf_mult(gauss[i][k], t_GF16);
 			}
 
-			for (int j = i + 1; j < SNOVA_o * SNOVA_l2; ++j) {
+			for (int j = i + 1; j < SNOVA_o * SNOVA_lr; ++j) {
 				if (gauss[j][i] != 0) {
 					gf_t gji = gauss[j][i];
-					for (int k = i; k < SNOVA_o * SNOVA_l2 + 1; ++k) {
+					for (int k = i; k < SNOVA_o * SNOVA_lr + 1; ++k) {
 						gauss[j][k] = gf_sub(gauss[j][k], gf_mult(gauss[i][k], gji));
 					}
 				}
@@ -985,23 +1007,23 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* d
 			// Last step of Gaussian elimination
 			memset(solution, 0, sizeof(solution));
 
-			for (int i = SNOVA_o * SNOVA_l2 - 1; i >= 0; --i) {
+			for (int i = SNOVA_o * SNOVA_lr - 1; i >= 0; --i) {
 				gf_t sum = 0;
-				for (int k = i + 1; k < SNOVA_o * SNOVA_l2; ++k) {
+				for (int k = i + 1; k < SNOVA_o * SNOVA_lr; ++k) {
 					gf_set_add(&sum, gf_mult(gauss[i][k], solution[k]));
 				}
-				solution[i] = gf_sub(gauss[i][SNOVA_o * SNOVA_l2], sum);
+				solution[i] = gf_sub(gauss[i][SNOVA_o * SNOVA_lr], sum);
 			}
-			memcpy(signature_in_GF + SNOVA_v * SNOVA_l2, solution, SNOVA_o * SNOVA_l2);
+			memcpy(signature_in_GF + SNOVA_v * SNOVA_lr, solution, SNOVA_o * SNOVA_lr);
 
 			// Establish signature using T12
 			for (int index = 0; index < SNOVA_v; ++index) {
 				for (int mi = 0; mi < SNOVA_o; ++mi) {
-					gf_mat_mul_add(&signature_in_GF[index * SNOVA_l2], &T12[(index * SNOVA_o + mi) * SNOVA_l2],
-					               &solution[mi * SNOVA_l2]);
+					gf_mat_mul_add_lr(&signature_in_GF[index * SNOVA_lr], &T12[(index * SNOVA_o + mi) * SNOVA_l2],
+					                  &solution[mi * SNOVA_lr], SNOVA_l, SNOVA_l, SNOVA_r);
 				}
 			}
-#ifdef SYMMETRIC
+#if defined(SYMMETRIC) && (SNOVA_r == SNOVA_l)
 			// Reject if the signature has too many symmetric matrices
 			int num_sym = 0;
 			for (int idx = 0; idx < SNOVA_n; ++idx) {
@@ -1022,7 +1044,7 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* d
 		}
 	} while (flag_redo);
 
-	compress_gf(sig, signature_in_GF, SNOVA_n * SNOVA_l2);
+	compress_gf(sig, signature_in_GF, SNOVA_n * SNOVA_lr);
 	memcpy(sig + BYTES_SIGNATURE - BYTES_SALT, salt, BYTES_SALT);
 
 	return 0;
@@ -1039,18 +1061,18 @@ int SNOVA_NAMESPACE(pk_expand)(expanded_PK* pkx, const uint8_t* pk) {
 	 * Create P matrix
 	 */
 	gf_t P_matrix[NUM_PUB_GF];
-	gf_t P22[SNOVA_o * SNOVA_o * SNOVA_o * SNOVA_l2];
+	gf_t P22[SNOVA_m1 * SNOVA_o * SNOVA_o * SNOVA_l2];
 
 	gf_t* P11 = P_matrix;
-	gf_t* P12 = P_matrix + SNOVA_o * SNOVA_v * SNOVA_v * SNOVA_l2;
-	gf_t* P21 = P_matrix + SNOVA_o * SNOVA_v * SNOVA_n * SNOVA_l2;
+	gf_t* P12 = P_matrix + SNOVA_m1 * SNOVA_v * SNOVA_v * SNOVA_l2;
+	gf_t* P21 = P_matrix + SNOVA_m1 * SNOVA_v * SNOVA_n * SNOVA_l2;
 
 	if (expand_pk(P22, pk + SEED_LENGTH_PUBLIC)) {
 		return -1;
 	}
 	expand_public(P_matrix, pk);
 
-	for (int mi = 0; mi < SNOVA_o; ++mi) {
+	for (int mi = 0; mi < SNOVA_m1; ++mi) {
 		for (int ni = 0; ni < SNOVA_v; ++ni) {
 			for (int nj = 0; nj < SNOVA_v; ++nj) {
 				for (int idx = 0; idx < SNOVA_l2; idx++)
@@ -1082,9 +1104,9 @@ int SNOVA_NAMESPACE(pk_expand)(expanded_PK* pkx, const uint8_t* pk) {
 	/**
 	 * Create AB matrices, improve q
 	 */
-	gf_t* A = P_matrix + (SNOVA_o * (SNOVA_n * SNOVA_n - SNOVA_o * SNOVA_o)) * SNOVA_l2;
-	gf_t* B = A + SNOVA_o * SNOVA_alpha * SNOVA_l2;
-	gf_t* q1 = A + 2 * SNOVA_o * SNOVA_alpha * SNOVA_l2;
+	gf_t* A = P_matrix + (SNOVA_m1 * (SNOVA_n * SNOVA_n - SNOVA_o * SNOVA_o)) * SNOVA_l2;
+	gf_t* B = A + SNOVA_o * SNOVA_alpha * SNOVA_r2;
+	gf_t* q1 = B + SNOVA_o * SNOVA_alpha * SNOVA_lr;
 	gf_t* q2 = q1 + SNOVA_o * SNOVA_alpha * SNOVA_l;
 
 #if FIXED_ABQ
@@ -1092,8 +1114,8 @@ int SNOVA_NAMESPACE(pk_expand)(expanded_PK* pkx, const uint8_t* pk) {
 #endif
 
 	for (size_t idx = 0; idx < SNOVA_o * SNOVA_alpha; idx++) {
-		be_invertible_by_add_aS(&(pkx->Am[idx * SNOVA_l2]), &A[idx * SNOVA_l2]);
-		be_invertible_by_add_aS(&(pkx->Bm[idx * SNOVA_l2]), &B[idx * SNOVA_l2]);
+		be_invertible_by_add_aS(&(pkx->Am[idx * SNOVA_r2]), &A[idx * SNOVA_r2], SNOVA_r, SNOVA_r);
+		be_invertible_by_add_aS(&(pkx->Bm[idx * SNOVA_lr]), &B[idx * SNOVA_lr], SNOVA_r, SNOVA_l);
 
 		if (!q1[idx * SNOVA_l + SNOVA_l - 1]) {
 			q1[idx * SNOVA_l + SNOVA_l - 1] = SNOVA_q - (q1[idx * SNOVA_l] + (q1[idx * SNOVA_l] == 0));
@@ -1112,7 +1134,7 @@ int SNOVA_NAMESPACE(pk_expand)(expanded_PK* pkx, const uint8_t* pk) {
 /**
  * Reference version of verify.
  */
-int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const uint8_t* digest, const size_t len_digest) {
+int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const uint8_t* digest) {
 	if (first_time) {
 		snova_init();
 	}
@@ -1123,7 +1145,7 @@ int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const ui
 		return -1;
 	}
 
-#ifdef SYMMETRIC
+#if defined(SYMMETRIC) && (SNOVA_r == SNOVA_l)
 	// Reject if the signature has symmetric matrices
 	int num_sym = 0;
 	for (int idx = 0; idx < SNOVA_n; ++idx) {
@@ -1143,44 +1165,44 @@ int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const ui
 	/**
 	 * Evaluate whipped central map
 	 */
-	gf_t hash_in_GF[SNOVA_o * SNOVA_l2] = {0};
-	gf_t sum_t0[SNOVA_o * SNOVA_l * SNOVA_n * SNOVA_l2] = {0};
-	gf_t sum_t1[SNOVA_o * SNOVA_l2 * SNOVA_n * SNOVA_l2] = {0};
+	gf_t hash_in_GF[SNOVA_o * SNOVA_lr] = {0};
+	gf_t sum_t0[SNOVA_m1 * SNOVA_l * SNOVA_n * SNOVA_lr] = {0};
+	gf_t sum_t1[SNOVA_m1 * SNOVA_l2 * SNOVA_n * SNOVA_r2] = {0};
 
 	/**
 	 * Whip signature
 	 */
-	gf_t whipped_sig[SNOVA_l * SNOVA_n * SNOVA_l2] = {0};
+	gf_t whipped_sig[SNOVA_l * SNOVA_n * SNOVA_lr] = {0};
 
 	for (int ab = 0; ab < SNOVA_l; ++ab)
 		for (int idx = 0; idx < SNOVA_n; ++idx)
 			for (int i1 = 0; i1 < SNOVA_l; i1++)
-				for (int j1 = 0; j1 < SNOVA_l; j1++)
+				for (int j1 = 0; j1 < SNOVA_r; j1++)
 					for (int k1 = 0; k1 < SNOVA_l; k1++)
-						gf_set_add(&whipped_sig[(ab * SNOVA_n + idx) * SNOVA_l2 + i1 * SNOVA_l + j1],
+						gf_set_add(&whipped_sig[(ab * SNOVA_n + idx) * SNOVA_lr + i1 * SNOVA_r + j1],
 						           gf_mult(gf_S[ab * SNOVA_l2 + i1 * SNOVA_l + k1],
-						                   signature_in_GF[idx * SNOVA_l2 + k1 * SNOVA_l + j1]));
+						                   signature_in_GF[idx * SNOVA_lr + k1 * SNOVA_r + j1]));
 
-	for (int mi = 0; mi < SNOVA_o; ++mi) {
+	for (int mi = 0; mi < SNOVA_m1; ++mi) {
 		// Right
 		for (int ni = 0; ni < SNOVA_n; ++ni)
 			for (int b1 = 0; b1 < SNOVA_l; ++b1)
 				for (int nj = 0; nj < SNOVA_n; ++nj)
-					gf_mat_mul_add16(&sum_t0[((mi * SNOVA_l + b1) * SNOVA_n + ni) * SNOVA_l2],
+					gf_mat_mul_add16(&sum_t0[((mi * SNOVA_l + b1) * SNOVA_n + ni) * SNOVA_lr],
 					                 &pkx->P[((mi * SNOVA_n + ni) * SNOVA_n + nj) * SNOVA_l2],
-					                 &whipped_sig[(b1 * SNOVA_n + nj) * SNOVA_l2]);
+					                 &whipped_sig[(b1 * SNOVA_n + nj) * SNOVA_lr]);
 
 		// Left, transposed whipped_sig
 		for (int a1 = 0; a1 < SNOVA_l; ++a1)
 			for (int b1 = 0; b1 < SNOVA_l; ++b1)
 				for (int ni = 0; ni < SNOVA_n; ++ni)
-					for (int i1 = 0; i1 < SNOVA_l; i1++)
-						for (int j1 = 0; j1 < SNOVA_l; j1++)
+					for (int i1 = 0; i1 < SNOVA_r; i1++)
+						for (int j1 = 0; j1 < SNOVA_r; j1++)
 							for (int k1 = 0; k1 < SNOVA_l; k1++)
 								gf_set_add(
-								    &sum_t1[(mi * SNOVA_l2 + a1 * SNOVA_l + b1) * SNOVA_l2 + i1 * SNOVA_l + j1],
-								    gf_mult(whipped_sig[(a1 * SNOVA_n + ni) * SNOVA_l2 + k1 * SNOVA_l + i1],
-								            sum_t0[((mi * SNOVA_l + b1) * SNOVA_n + ni) * SNOVA_l2 + k1 * SNOVA_l + j1]));
+								    &sum_t1[(mi * SNOVA_l2 + a1 * SNOVA_l + b1) * SNOVA_r2 + i1 * SNOVA_r + j1],
+								    gf_mult(whipped_sig[(a1 * SNOVA_n + ni) * SNOVA_lr + k1 * SNOVA_r + i1],
+								            sum_t0[((mi * SNOVA_l + b1) * SNOVA_n + ni) * SNOVA_lr + k1 * SNOVA_r + j1]));
 	}
 
 	/**
@@ -1190,29 +1212,31 @@ int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const ui
 		for (int alpha = 0; alpha < SNOVA_alpha; ++alpha) {
 			int mi_prime = i_prime(mi, alpha);
 
-			gf_t gf16m_temp1[SNOVA_l2] = {0};
-			gf_t gf16m_temp2[SNOVA_l2] = {0};
+			gf_t gf16m_temp1[SNOVA_r2] = {0};
+			gf_t gf16m_temp2[SNOVA_lr] = {0};
 
 			// apply q1 and q2
 			for (int a1 = 0; a1 < SNOVA_l; ++a1) {
-				gf_t sumb[SNOVA_l2] = {0};
+				gf_t sumb[SNOVA_r2] = {0};
 
 				for (int b1 = 0; b1 < SNOVA_l; ++b1)
-					for (int i1 = 0; i1 < SNOVA_l; i1++)
-						for (int j1 = 0; j1 < SNOVA_l; j1++)
-							gf_set_add(&sumb[i1 * SNOVA_l + j1],
-							           gf_mult(sum_t1[(mi_prime * SNOVA_l2 + a1 * SNOVA_l + b1) * SNOVA_l2 + i1 * SNOVA_l + j1],
+					for (int i1 = 0; i1 < SNOVA_r; i1++)
+						for (int j1 = 0; j1 < SNOVA_r; j1++)
+							gf_set_add(&sumb[i1 * SNOVA_r + j1],
+							           gf_mult(sum_t1[(mi_prime * SNOVA_l2 + a1 * SNOVA_l + b1) * SNOVA_r2 + i1 * SNOVA_r + j1],
 							                   pkx->q2[(mi * SNOVA_alpha + alpha) * SNOVA_l + b1]));
 
-				for (int i1 = 0; i1 < SNOVA_l; i1++)
-					for (int j1 = 0; j1 < SNOVA_l; j1++)
-						gf_set_add(&gf16m_temp1[i1 * SNOVA_l + j1],
-						           gf_mult(sumb[i1 * SNOVA_l + j1], pkx->q1[(mi * SNOVA_alpha + alpha) * SNOVA_l + a1]));
+				for (int i1 = 0; i1 < SNOVA_r; i1++)
+					for (int j1 = 0; j1 < SNOVA_r; j1++)
+						gf_set_add(&gf16m_temp1[i1 * SNOVA_r + j1],
+						           gf_mult(sumb[i1 * SNOVA_r + j1], pkx->q1[(mi * SNOVA_alpha + alpha) * SNOVA_l + a1]));
 			}
 
 			// A and B
-			gf_mat_mul_add(gf16m_temp2, gf16m_temp1, &(pkx->Bm[(mi * SNOVA_alpha + alpha) * SNOVA_l2]));
-			gf_mat_mul_add(&hash_in_GF[mi * SNOVA_l2], &(pkx->Am[(mi * SNOVA_alpha + alpha) * SNOVA_l2]), gf16m_temp2);
+			gf_mat_mul_add_lr(gf16m_temp2, gf16m_temp1, &(pkx->Bm[(mi * SNOVA_alpha + alpha) * SNOVA_lr]), SNOVA_r, SNOVA_r,
+			                  SNOVA_l);
+			gf_mat_mul_add_lr(&hash_in_GF[mi * SNOVA_lr], &(pkx->Am[(mi * SNOVA_alpha + alpha) * SNOVA_r2]), gf16m_temp2,
+			                  SNOVA_r, SNOVA_r, SNOVA_l);
 		}
 
 	/**
@@ -1221,7 +1245,7 @@ int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const ui
 	uint8_t signed_bytes[BYTES_HASH];
 	uint8_t signed_gf[GF16_HASH] = {0};
 	const uint8_t *salt = sig + BYTES_SIGNATURE - BYTES_SALT;
-	hash_combined(signed_bytes, digest, len_digest, pkx->pk_seed, salt);
+	hash_combined(signed_bytes, digest, pkx->pk_seed, salt);
 	expand_gf(signed_gf, signed_bytes, GF16_HASH);
 
 	int result = 0;

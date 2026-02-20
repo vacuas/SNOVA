@@ -14,11 +14,21 @@
 #error "Not supported"
 #endif
 
-#if SNOVA_q != 16 && !defined(ASYMMETRIC)
+#ifndef SNOVA_m1
+#define SNOVA_m1 ((SNOVA_o * SNOVA_r + SNOVA_l - 1) / SNOVA_l)
+#endif
+
+#if SNOVA_q != 16
 #define SYMMETRIC
 #endif
 
+#ifndef SNOVA_r
+#define SNOVA_r SNOVA_l
+#endif
+
+#ifndef FIXED_ABQ
 #define FIXED_ABQ ((SNOVA_q != 16) || (SNOVA_l < 4))
+#endif
 
 #ifdef AESCTR
 #define PKX_NAME _aes_
@@ -35,30 +45,23 @@
 #define SEED_LENGTH (SEED_LENGTH_PUBLIC + SEED_LENGTH_PRIVATE)
 
 #define BYTES_SALT 16
+#define BYTES_DIGEST 64
 
 // Derived
 #define SNOVA_n (SNOVA_v + SNOVA_o)
 #define SNOVA_l2 (SNOVA_l * SNOVA_l)
+#define SNOVA_r2 (SNOVA_r * SNOVA_r)
+#define SNOVA_lr (SNOVA_l * SNOVA_r)
 
 #ifdef SYMMETRIC
-#define NUMGF_PK (SNOVA_o * SNOVA_o * SNOVA_l * (SNOVA_o * SNOVA_l + 1) / 2)
+#define NUMGF_PK (SNOVA_m1 * SNOVA_o * SNOVA_l * (SNOVA_o * SNOVA_l + 1) / 2)
 #else
-#define NUMGF_PK (SNOVA_o * SNOVA_o * SNOVA_o * SNOVA_l2)
+#define NUMGF_PK (SNOVA_m1 * SNOVA_o * SNOVA_o * SNOVA_l2)
 #endif
-#define NUMGF_SIGNATURE (SNOVA_n * SNOVA_l2)
 
-#if SNOVA_q == 7
-#define Q_A 4
-#define Q_B 6
-#if SNOVA_l != 3
-#define Q_C 1
-#else
-#define Q_C 5
-#endif
-#define PACK_GF 17
-#define PACK_BYTES 6
+#define NUMGF_SIGNATURE (SNOVA_n * SNOVA_lr)
 
-#elif SNOVA_q == 11
+#if SNOVA_q == 11
 #define Q_A 0
 #define Q_B 3
 #define Q_C 6
@@ -120,21 +123,24 @@
 #define BYTES_PK (BYTES_GF(NUMGF_PK) + SEED_LENGTH_PUBLIC)
 #define BYTES_SIGNATURE (BYTES_GF(NUMGF_SIGNATURE) + BYTES_SALT)
 
-#define GF16_HASH (SNOVA_o * SNOVA_l2)
+#define GF16_HASH (SNOVA_o * SNOVA_l * SNOVA_r)
 #define BYTES_HASH (BYTES_GF(GF16_HASH))
 
-#define SNOVA_alpha (SNOVA_l * SNOVA_l + SNOVA_l)
+#ifndef SNOVA_alpha
+#define SNOVA_alpha (SNOVA_r * SNOVA_r + SNOVA_r)
+#endif
+
 #ifdef SYMMETRIC
-#define NUM_GEN_PUB_GF                                                                                        \
-    ((SNOVA_o * (SNOVA_v * (SNOVA_v + 1) / 2 + SNOVA_v * SNOVA_o) + 2 * (SNOVA_o * SNOVA_alpha)) * SNOVA_l2 + \
-     2 * SNOVA_o * SNOVA_alpha * SNOVA_l)
+#define NUM_GEN_PUB_GF                                                         \
+    (SNOVA_m1 * (SNOVA_v * (SNOVA_v + 1) / 2 + SNOVA_v * SNOVA_o) * SNOVA_l2 + \
+     (SNOVA_o * SNOVA_alpha) * (SNOVA_r2 + SNOVA_lr) + 2 * SNOVA_o * SNOVA_alpha * SNOVA_l)
 #else
-#define NUM_GEN_PUB_GF                                                                                  \
-    ((SNOVA_o * (SNOVA_v * SNOVA_v + 2 * SNOVA_v * SNOVA_o) + 2 * (SNOVA_o * SNOVA_alpha)) * SNOVA_l2 + \
+#define NUM_GEN_PUB_GF                                                                                                     \
+    (SNOVA_m1 * (SNOVA_v * SNOVA_v + 2 * SNOVA_v * SNOVA_o) * SNOVA_l2 + (SNOVA_o * SNOVA_alpha) * (SNOVA_r2 + SNOVA_lr) + \
      2 * SNOVA_o * SNOVA_alpha * SNOVA_l)
 #endif
-#define NUM_PUB_GF                                                                                      \
-    ((SNOVA_o * (SNOVA_v * SNOVA_v + 2 * SNOVA_v * SNOVA_o) + 2 * (SNOVA_o * SNOVA_alpha)) * SNOVA_l2 + \
+#define NUM_PUB_GF                                                                                                       \
+    (SNOVA_m1 * (SNOVA_v * SNOVA_v + 2 * SNOVA_v * SNOVA_o) * SNOVA_l2 + SNOVA_o * SNOVA_alpha * (SNOVA_r2 + SNOVA_lr) + \
      2 * SNOVA_o * SNOVA_alpha * SNOVA_l)
 
 #if SNOVA_q != 16
@@ -142,19 +148,19 @@
 #else
 #define NUM_GEN_PUB_BYTES (NUM_GEN_PUB_GF / 2)
 #endif
-#define NUM_GEN_SEC_BYTES (BYTES_GF(SNOVA_v * SNOVA_l2))
+#define NUM_GEN_SEC_BYTES (BYTES_GF(SNOVA_v * SNOVA_lr))
 
-#define i_prime(mi, alpha) ((alpha + mi) % SNOVA_o)
+#define i_prime(mi, alpha) ((alpha + mi) % SNOVA_m1)
 
 typedef struct {
-	uint16_t P11[SNOVA_o * SNOVA_n * SNOVA_n * SNOVA_l2];
+	uint16_t P11[SNOVA_m1 * SNOVA_n * SNOVA_n * SNOVA_l2];
 	uint16_t T12[SNOVA_o * SNOVA_v * SNOVA_l2];
-	uint16_t F21[SNOVA_o * SNOVA_o * SNOVA_v * SNOVA_l2];
+	uint16_t F21[SNOVA_m1 * SNOVA_o * SNOVA_v * SNOVA_l2];
 #ifndef SYMMETRIC
-	uint16_t F12[SNOVA_o * SNOVA_o * SNOVA_v * SNOVA_l2];
+	uint16_t F12[SNOVA_m1 * SNOVA_o * SNOVA_v * SNOVA_l2];
 #endif
-	uint16_t Am[SNOVA_o * SNOVA_alpha * SNOVA_l2];
-	uint16_t Bm[SNOVA_o * SNOVA_alpha * SNOVA_l2];
+	uint16_t Am[SNOVA_o * SNOVA_alpha * SNOVA_r2];
+	uint16_t Bm[SNOVA_o * SNOVA_alpha * SNOVA_lr];
 	uint16_t Q1[SNOVA_o * SNOVA_alpha * SNOVA_l2];
 	uint16_t Q2[SNOVA_o * SNOVA_alpha * SNOVA_l2];
 	uint16_t q1[SNOVA_o * SNOVA_alpha * SNOVA_l];
@@ -163,9 +169,9 @@ typedef struct {
 } expanded_SK;
 
 typedef struct {
-	uint16_t P[SNOVA_o * SNOVA_n * SNOVA_n * SNOVA_l2];
-	uint8_t Am[SNOVA_o * SNOVA_alpha * SNOVA_l2];
-	uint8_t Bm[SNOVA_o * SNOVA_alpha * SNOVA_l2];
+	uint16_t P[SNOVA_m1 * SNOVA_n * SNOVA_n * SNOVA_l2];
+	uint8_t Am[SNOVA_o * SNOVA_alpha * SNOVA_r2];
+	uint8_t Bm[SNOVA_o * SNOVA_alpha * SNOVA_lr];
 	uint8_t q1[SNOVA_o * SNOVA_alpha * SNOVA_l];
 	uint8_t q2[SNOVA_o * SNOVA_alpha * SNOVA_l];
 	uint8_t pk_seed[SEED_LENGTH_PUBLIC];

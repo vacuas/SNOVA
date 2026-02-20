@@ -19,8 +19,6 @@
 #include "rng.h"
 #include "symmetric.h"
 
-#define BYTES_DIGEST 64
-
 int crypto_sign_keypair(unsigned char* pk, unsigned char* sk) {
 	uint8_t seed[SEED_LENGTH];
 

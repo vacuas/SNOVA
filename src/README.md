@@ -6,7 +6,8 @@ Five implementations are provided:
 1. The reference implementation in `snova_ref.c`,
 2. An optimized implementation for odd prime $q$ in `snova_opt_q.c`. This version uses plain-C. For additional optimization on older compilers, it will use AVX2 instructions if available,
 3. An optimized implementation for $q=16$ in `snova_opt_16.c`. This version uses plain-C. For additional optimization it will use AVX2 instructions if available,
-4. Another optimized version for $q=16$ and $l=r$ in `snova_avx2_16.c`. This version uses AVX2 or ARM NEON instructions. For $l \neq 4$ this version is substantially faster than `snova_opt_16.c`.
+4. A version for odd prime $q$ optimized for rectangular signatures in `snova_rect_q.c`,
+5. Another optimized version for $q=16$ and $l=r$ in `snova_avx2_16.c`. This version uses AVX2 or ARM NEON instructions. For $l \neq 4$ this version is substantially faster than `snova_opt_16.c`.
 
 
 Building
