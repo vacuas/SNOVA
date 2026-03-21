@@ -16,6 +16,6 @@ Building SNOVA requires a C compiler and `make`.
 
 # KAT digests
 
-This directory contains KAT digests for SNOVA 2.2. It is the output of `make digest` after building.
+This directory contains KAT digests for SNOVA 2.3. It is the output of `make digest` after building.
 
 The official KAT files can be found in the repository https://github.com/PQCLAB-SNOVA/SNOVA_KAT. The KAT files for q=16, l=4 have not been changed since Round 2.

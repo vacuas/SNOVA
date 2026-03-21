@@ -25,8 +25,7 @@ make clean all P="-D SNOVA_v=24 -D SNOVA_o=5 -D SNOVA_q=16 -D SNOVA_l=4 -D AESCT
 
 Available optimization options are:
 1. Use `make OPT=REF` to build the reference implementation.
-2. Use `make OPT=OPT` for the optimized version.
-3. Use `make OPT=AVX2` to use `snova_avx2_16.c` for $q=16$ and $l=2$. For other parameter sets `OPT=AVX2` is identical to `OPT=OPT`.
+2. Use `make OPT=OPT` (default) for the optimized version. The file `snova_opt.c` will include the appropriate actual implementation, using AVX2 is available.
 
 
 Symmetric Primitives

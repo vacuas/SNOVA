@@ -19,9 +19,9 @@ except:
 
 # SNOVA parameters
 
-v = 24
+v = 26
 o = 5
-q = 23
+q = 19
 l = 4
 aes = False
 
@@ -31,16 +31,16 @@ r = l
 m1 = math.ceil(o * r / l)
 n_alpha = r * r + r
 
-# RectSNOVA instance (36,7,19,2,5,16,20)
+# Example Rectangular SNOVA instance
 
 if False:
-    v = 36
-    o = 7
-    q = 19
-    l = 2
+    v = 26
+    o = 4
+    q = 16
+    l = 4
     r = 5
-    m1 = 16
-    n_alpha = 20
+    m1 = 5
+    n_alpha = 25
 
 
 ################################################################
@@ -533,6 +533,7 @@ def sign(sk, msg, salt):
         # Check for symmetric signature
         ok = True
         if l == r and not ASYMMETRIC_PUBMAT:
+            num_sym = 0
             for idx in range(n):
                 is_sym = True
                 for i1 in range(l):
@@ -540,7 +541,9 @@ def sign(sk, msg, salt):
                         if sig_gf[idx * l * r + i1 * r + j1] != sig_gf[idx * l * r + j1 * r + i1]:
                             is_sym = False
                 if is_sym:
-                    ok = False
+                    num_sym += 1
+            if num_sym > (n // 4 if l == 2 else 0):
+                ok = False
         if ok:
             break
 
@@ -561,6 +564,7 @@ def verify(pk, sig_bytes, msg):
 
     # Check for symmetric signature
     if l == r and not ASYMMETRIC_PUBMAT:
+        num_sym = 0
         for idx in range(n):
             is_sym = True
             for i1 in range(l):
@@ -568,7 +572,9 @@ def verify(pk, sig_bytes, msg):
                     if sig[idx * l + i1, j1] != sig[idx * l + j1, i1]:
                         is_sym = False
             if is_sym:
-                raise Exception('Verify failed!')
+                num_sym += 1
+        if num_sym > (n // 4 if l == 2 else 0):
+            raise Exception('Verify failed!')
 
     # Expand pubkey
     pk_seed = pk[:16]

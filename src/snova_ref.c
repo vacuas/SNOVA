@@ -431,11 +431,12 @@ void expand_public(gf_t* P_matrix, const uint8_t* seed) {
 #endif
 }
 
-static void hash_combined(uint8_t* hash_out, const uint8_t* digest, const uint8_t* pk_seed, const uint8_t* salt) {
+static void hash_combined(uint8_t* hash_out, const uint8_t* digest, const size_t len_digest, const uint8_t* pk_seed,
+                          const uint8_t *salt) {
 	shake_t state;
 	shake256_init(&state);
 	shake_absorb(&state, pk_seed, SEED_LENGTH_PUBLIC);
-	shake_absorb(&state, digest, BYTES_DIGEST);
+	shake_absorb(&state, digest, len_digest);
 	shake_absorb(&state, salt, BYTES_SALT);
 	shake_finalize(&state);
 	shake_squeeze(hash_out, BYTES_HASH, &state);
@@ -660,7 +661,8 @@ int SNOVA_NAMESPACE(sk_expand)(expanded_SK* skx, const uint8_t* sk) {
 /**
  * Reference version of Sign. Deterministic using the salt provided
  */
-int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* digest, const uint8_t* salt) {
+int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* digest, const size_t len_digest,
+                          const uint8_t *salt) {
 	if (first_time) {
 		snova_init();
 	}
@@ -712,7 +714,7 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* d
 		}
 	}
 
-	for (int i1 = 0; i1 < SNOVA_o * SNOVA_v * SNOVA_o * SNOVA_l2; i1++) {
+	for (int i1 = 0; i1 < SNOVA_m1 * SNOVA_v * SNOVA_o * SNOVA_l2; i1++) {
 		gf_set_add(&F12[i1], P12[i1]);
 	}
 #endif
@@ -740,7 +742,7 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* d
 	gf_t hash_in_GF16[GF16_HASH];
 
 	uint8_t sign_hashb[BYTES_HASH];
-	hash_combined(sign_hashb, digest, skx->sk_seed, salt);
+	hash_combined(sign_hashb, digest, len_digest, skx->sk_seed, salt);
 	expand_gf(hash_in_GF16, sign_hashb, GF16_HASH);
 
 	// Find a solution for T.X
@@ -864,7 +866,7 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* d
 		// Whipped F21
 		gf_t whipped_F21[SNOVA_m1 * SNOVA_l * SNOVA_o * SNOVA_lr] = {0};
 #ifndef SYMMETRIC
-		gf_t whipped_F12[SNOVA_m1 * SNOVA_l * SNOVA_o * SNOVA_l2] = {0};
+		gf_t whipped_F12[SNOVA_m1 * SNOVA_l * SNOVA_o * SNOVA_lr] = {0};
 #else
 #define whipped_F12 whipped_F21
 #endif
@@ -887,12 +889,12 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* d
 				for (int b1 = 0; b1 < SNOVA_l; ++b1)
 					for (int nj = 0; nj < SNOVA_v; ++nj)
 						for (int i1 = 0; i1 < SNOVA_l; i1++)
-							for (int j1 = 0; j1 < SNOVA_l; j1++)
+							for (int j1 = 0; j1 < SNOVA_r; j1++)
 								for (int k1 = 0; k1 < SNOVA_l; k1++)
 									gf_set_add(
-									    &whipped_F12[((mi * SNOVA_l + b1) * SNOVA_o + idx) * SNOVA_l2 + i1 * SNOVA_l + j1],
+									    &whipped_F12[((mi * SNOVA_l + b1) * SNOVA_o + idx) * SNOVA_lr + i1 * SNOVA_r + j1],
 									    gf_mult(F12[((mi * SNOVA_v + nj) * SNOVA_o + idx) * SNOVA_l2 + k1 * SNOVA_l + i1],
-									            whipped_sig[(b1 * SNOVA_v + nj) * SNOVA_l2 + k1 * SNOVA_l + j1]));
+									            whipped_sig[(b1 * SNOVA_v + nj) * SNOVA_lr + k1 * SNOVA_r + j1]));
 
 #endif
 		}
@@ -1038,7 +1040,7 @@ int SNOVA_NAMESPACE(sign)(const expanded_SK* skx, uint8_t* sig, const uint8_t* d
 #if SNOVA_l > 2
 			flag_redo = num_sym > 0;
 #else
-			flag_redo = num_sym > 12;
+			flag_redo = num_sym > (SNOVA_n / 4);
 #endif
 #endif
 		}
@@ -1134,7 +1136,7 @@ int SNOVA_NAMESPACE(pk_expand)(expanded_PK* pkx, const uint8_t* pk) {
 /**
  * Reference version of verify.
  */
-int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const uint8_t* digest) {
+int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const uint8_t* digest, const size_t len_digest) {
 	if (first_time) {
 		snova_init();
 	}
@@ -1157,9 +1159,15 @@ int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const ui
 			}
 		num_sym += is_symmetric;
 	}
+#if SNOVA_l > 2
 	if (num_sym > 0) {
 		return -1;
 	}
+#else
+	if (num_sym > (SNOVA_n / 4)) {
+		return -1;
+	}
+#endif
 #endif
 
 	/**
@@ -1245,7 +1253,7 @@ int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const ui
 	uint8_t signed_bytes[BYTES_HASH];
 	uint8_t signed_gf[GF16_HASH] = {0};
 	const uint8_t *salt = sig + BYTES_SIGNATURE - BYTES_SALT;
-	hash_combined(signed_bytes, digest, pkx->pk_seed, salt);
+	hash_combined(signed_bytes, digest, len_digest, pkx->pk_seed, salt);
 	expand_gf(signed_gf, signed_bytes, GF16_HASH);
 
 	int result = 0;

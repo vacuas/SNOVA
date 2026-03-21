@@ -43,7 +43,7 @@ OQS_STATUS SNOVA_NAMESPACE(oqs_sign)(uint8_t* signature, size_t* signature_len, 
 
 	shake256(digest, BYTES_DIGEST, message, message_len);
 
-	res = SNOVA_NAMESPACE(sign)(&skx_d, signature, digest, salt);
+	res = SNOVA_NAMESPACE(sign)(&skx_d, signature, digest, BYTES_DIGEST, salt);
 	if (res) {
 		return OQS_ERROR;
 	} else {
@@ -68,7 +68,7 @@ OQS_STATUS SNOVA_NAMESPACE(oqs_verify)(const uint8_t* signature, size_t signatur
 
 	shake256(digest, BYTES_DIGEST, message, message_len);
 
-	res = SNOVA_NAMESPACE(verify)(&pkx, signature, digest);
+	res = SNOVA_NAMESPACE(verify)(&pkx, signature, digest, BYTES_DIGEST);
 	if (res) {
 		return OQS_ERROR;
 	} else {

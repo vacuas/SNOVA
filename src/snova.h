@@ -36,9 +36,15 @@
 #define PKX_NAME _
 #endif
 
+#if SNOVA_l == SNOVA_r
 #define PARAM_JOIN_(o, p, a, b, c, d, f) _snova_##a##_##b##_##c##_##d##p##o##_##f
 #define PARAM_JOIN(o, p, a, b, c, d, f) PARAM_JOIN_(o, p, a, b, c, d, f)
 #define SNOVA_NAMESPACE(f) PARAM_JOIN(SNOVA_OPT, PKX_NAME, SNOVA_v, SNOVA_o, SNOVA_q, SNOVA_l, f)
+#else
+#define PARAM_JOIN_(o, p, a, b, c, d, r, f) _snova_##a##_##b##_##c##_##d##x##r##p##o##_##f
+#define PARAM_JOIN(o, p, a, b, c, d, r, f) PARAM_JOIN_(o, p, a, b, c, d, r, f)
+#define SNOVA_NAMESPACE(f) PARAM_JOIN(SNOVA_OPT, PKX_NAME, SNOVA_v, SNOVA_o, SNOVA_q, SNOVA_l, SNOVA_r, f)
+#endif
 
 #define SEED_LENGTH_PUBLIC 16
 #define SEED_LENGTH_PRIVATE 32
@@ -131,9 +137,13 @@
 #endif
 
 #ifdef SYMMETRIC
+#if FIXED_ABQ
+#define NUM_GEN_PUB_GF (SNOVA_m1 * (SNOVA_v * (SNOVA_v + 1) / 2 + SNOVA_v * SNOVA_o) * SNOVA_l2)
+#else
 #define NUM_GEN_PUB_GF                                                         \
     (SNOVA_m1 * (SNOVA_v * (SNOVA_v + 1) / 2 + SNOVA_v * SNOVA_o) * SNOVA_l2 + \
      (SNOVA_o * SNOVA_alpha) * (SNOVA_r2 + SNOVA_lr) + 2 * SNOVA_o * SNOVA_alpha * SNOVA_l)
+#endif
 #else
 #define NUM_GEN_PUB_GF                                                                                                     \
     (SNOVA_m1 * (SNOVA_v * SNOVA_v + 2 * SNOVA_v * SNOVA_o) * SNOVA_l2 + (SNOVA_o * SNOVA_alpha) * (SNOVA_r2 + SNOVA_lr) + \
