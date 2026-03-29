@@ -19,29 +19,17 @@ except:
 
 # SNOVA parameters
 
-v = 26
+v = 28
 o = 5
 q = 19
 l = 4
+r = l
 aes = False
 
 # Derived RectSNOVA parameters
 
-r = l
 m1 = math.ceil(o * r / l)
-n_alpha = r * r + r
-
-# Example Rectangular SNOVA instance
-
-if False:
-    v = 26
-    o = 4
-    q = 16
-    l = 4
-    r = 5
-    m1 = 5
-    n_alpha = 25
-
+n_alpha = l * r + r
 
 ################################################################
 
@@ -100,7 +88,7 @@ else:
     NUMGF_PK = m1 * o * l * (o * l + 1) // 2
 
 if q == 16:
-    NUM_GEN_PUB_BYTES = NUM_GEN_PUB_GF // 2
+    NUM_GEN_PUB_BYTES = math.ceil((NUM_GEN_PUB_GF + 1) / 2)
 else:
     NUM_GEN_PUB_BYTES = NUM_GEN_PUB_GF
 

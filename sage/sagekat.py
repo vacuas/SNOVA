@@ -55,7 +55,7 @@ for var in variants:
     if len(var) > 6:
         n_alpha = var[6]
     else:
-        n_alpha = r * r + r
+        n_alpha = l * r + r
 
     for aes in [True, False]:
         name = f"SNOVA_{v}_{o}_{q}_{l if l == r else f'{l}x{r}'}{'_AES' if aes else ''}"
@@ -67,7 +67,7 @@ for var in variants:
         param_dict = {
             "print('# SNOVA', v, o, q, l, 'AES' if aes else 'SHAKE', r, m1, n_alpha)":
             f"print('# {name}')",
-            "v = 26": f"v = {v}",
+            "v = 28": f"v = {v}",
             "o = 5": f"o = {o}",
             "q = 19": f"q = {q}",
             "l = 4": f"l = {l}",

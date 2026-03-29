@@ -133,7 +133,7 @@
 #define BYTES_HASH (BYTES_GF(GF16_HASH))
 
 #ifndef SNOVA_alpha
-#define SNOVA_alpha (SNOVA_r * SNOVA_r + SNOVA_r)
+#define SNOVA_alpha (SNOVA_l * SNOVA_r + SNOVA_r)
 #endif
 
 #ifdef SYMMETRIC
@@ -156,7 +156,7 @@
 #if SNOVA_q != 16
 #define NUM_GEN_PUB_BYTES (NUM_GEN_PUB_GF)
 #else
-#define NUM_GEN_PUB_BYTES (NUM_GEN_PUB_GF / 2)
+#define NUM_GEN_PUB_BYTES ((NUM_GEN_PUB_GF + 1) / 2)
 #endif
 #define NUM_GEN_SEC_BYTES (BYTES_GF(SNOVA_v * SNOVA_lr))
 
