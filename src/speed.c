@@ -236,7 +236,7 @@ int main(void) {
 		printf("%s & %d & %d", CRYPTO_ALGNAME, CRYPTO_PUBLICKEYBYTES, CRYPTO_BYTES);
 #endif
 	} else {
-		printf("\nFAIL!!\n\n%s & %d & %d", CRYPTO_ALGNAME, CRYPTO_PUBLICKEYBYTES, CRYPTO_BYTES);
+		printf("\nFAIL!!\n\n%s", CRYPTO_ALGNAME);
 	}
 
 #ifdef AVERAGE

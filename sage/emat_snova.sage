@@ -2,10 +2,14 @@
 #
 # SNOVA implementation in SageMath
 #
+# This version uses the formulation in terms of an E matrix
+# which is derived from the ABQ matrices or from a seed
+#
+# This version also generates MAYO KATs
+#
 # Copyright (c) 2025 SNOVA TEAM
 
-from hashlib import shake_128, shake_256
-import math
+import hashlib
 import traceback
 
 try:
@@ -19,21 +23,51 @@ except:
 
 # SNOVA parameters
 
-v = 28
-o = 5
-q = 19
-l = 4
-r = l
-aes = False
+if True:
+    # SNOVA_24_5_23_4
 
-# Derived RectSNOVA parameters
+    v = 24
+    o = 5
+    q = 23
+    l = 4
+    aes = False
+    r = l
+    m1 = o
+    m2 = o * l * r
+    RANDOM_E = False
 
-m1 = math.ceil(o * r / l)
-n_alpha = l * r + r
+elif True:
+    # MAYO-1
+
+    v = 78
+    o = 8
+    q = 16
+    l = 1
+    aes = True
+    r = 10
+    m1 = 78
+    m2 = o * l * r
+    RANDOM_E = False
+
+else:
+    # RectSNOVA candidate
+
+    v = 37
+    o = 6
+    q = 19
+    l = 2
+    aes = True
+    r = 6
+    m1 = 17
+    m2 = o * l * r
+    RANDOM_E = False
 
 ################################################################
 
+n_alpha = r * r + r
 n = v + o
+
+MAYO = l == 1
 
 ASYMMETRIC_PUBMAT = q == 16
 
@@ -77,7 +111,7 @@ def BYTES_GF(x):
     return (PACK_BYTES * (x) + PACK_GF - 1) // PACK_GF
 
 
-GF16_HASH = o * l * r
+GF16_HASH = m2
 BYTES_HASH = BYTES_GF(GF16_HASH)
 
 if ASYMMETRIC_PUBMAT:
@@ -88,7 +122,7 @@ else:
     NUMGF_PK = m1 * o * l * (o * l + 1) // 2
 
 if q == 16:
-    NUM_GEN_PUB_BYTES = math.ceil((NUM_GEN_PUB_GF + 1) / 2)
+    NUM_GEN_PUB_BYTES = NUM_GEN_PUB_GF // 2
 else:
     NUM_GEN_PUB_BYTES = NUM_GEN_PUB_GF
 
@@ -107,6 +141,8 @@ else:
             S[j, i] = S[i, j]
     S[l - 1, l - 1] = Q_C
 
+
+S_times_o = matrix.block_diagonal([S for _ in range(o)])
 S_times_v = matrix.block_diagonal([S for _ in range(v)])
 S_times_n = matrix.block_diagonal([S for _ in range(n)])
 
@@ -122,9 +158,14 @@ def expand_gf(data, num):
         for i in range(min(PACK_BYTES, len(data) - idx)):
             sum += int(data[idx + i]) * int(256**i)
         idx += PACK_BYTES
-        for i in range(PACK_GF):
-            res.append(from_int(int(sum) % q))
-            sum = sum // q
+        if q == 16:
+            res.append(from_int(int(sum) % 16))
+            res.append(from_int(int(sum / 16) % 16))
+            sum = sum // 256
+        else:
+            for i in range(PACK_GF):
+                res.append(from_int(int(sum) % q))
+                sum = sum // q
     return res[:num]
 
 
@@ -145,11 +186,23 @@ def compress_gf(data, num):
 
 def hash_combined(msg, pk_seed, salt):
     # Get message hash in $\mathbb{F}_{q}$
-    res = shake_256(pk_seed + shake_256(msg).digest(64) + salt).digest(BYTES_HASH)
+    state = hashlib.shake_256()
+    if MAYO:
+        dgst = hashlib.shake_256(msg).digest(32)
+        state.update(dgst)
+    else:
+        state.update(pk_seed)
+        dgst = hashlib.shake_256(msg).digest(64)
+        state.update(dgst)
+    state.update(salt)
+    res = state.digest(BYTES_HASH)
     res_gf = expand_gf(res, GF16_HASH)
 
-    # Necessary to be compliant to KATs from C-Reference
-    msg_hash = [res_gf[mi * l * r + j1 * l + i1] for mi in range(o) for i1 in range(l) for j1 in range(r)]
+    if MAYO:
+        msg_hash = res_gf[:m1]
+    else:
+        # Necessary to be compliant to KATs from C-Reference
+        msg_hash = [res_gf[mi * l * r + j1 * l + i1] for mi in range(o) for i1 in range(l) for j1 in range(r)]
 
     return msg_hash
 
@@ -168,25 +221,24 @@ def snova_xof(seed):
             blockseed = bytearray(seed)
             for j in range(8):
                 blockseed.append((i >> (8 * j)) % 256)
-            res += shake_128(blockseed).digest(168)
+            res += hashlib.shake_128(blockseed).digest(168)
         return bytes(res[:NUM_GEN_PUB_BYTES])
 
 
 # Expand secret
 
-def expand_T12(seed):
+def expand_T12(sk_data):
     # Generate the secret map $T_{12}$
 
     def gen_a_FqS(coefs):
         # Generate elements of $\mathbb{F}_{q}[S]$
-        if coefs[l - 1] == 0:
+        if not MAYO and coefs[l - 1] == 0:
             coefs[l - 1] = q - (coefs[0] if coefs[0] != 0 else 1)
         F = matrix(GF_q, l, l)
         for i in range(l):
             F += S**i * from_int(coefs[i])
         return F
 
-    sk_data = shake_256(seed).digest(2 * o * v * l)  # Overdimensioned
     coef = []
     idx = 0
     i = 0
@@ -229,7 +281,7 @@ def convert_bytes_to_GF(data):
 
 def fixed_abq():
     NUM_ABQ = o * n_alpha * (r * (r + l) + 2 * l)
-    abqdata = shake_256(b'SNOVA_ABQ').digest(NUM_ABQ)
+    abqdata = hashlib.shake_256(b'SNOVA_ABQ').digest(NUM_ABQ)
     return convert_bytes_to_GF(abqdata)
 
 
@@ -309,8 +361,31 @@ def expand_public_asym(seed):
     return Pm11, Pm12, Pm21, fixed_abq() if l < 4 else data[idx:]
 
 
+def expand_public_mayo(seed):
+    bindata = nistrng.aesctr(seed, NUM_GEN_PUB_BYTES)
+    data = convert_bytes_to_GF(bindata)
+
+    idx = 0
+    Pm11 = [matrix(GF_q, v * l, v * l) for _ in range(m1)]
+    Pm12 = [matrix(GF_q, v * l, o * l) for _ in range(m1)]
+    Pm21 = [matrix(GF_q, o * l, v * l) for _ in range(m1)]
+    for ni in range(v):
+        for nj in range(ni, v):
+            for mi in range(m1):
+                Pm11[mi][ni, nj] = data[idx]
+                idx += 1
+    for ni in range(v):
+        for nj in range(o):
+            for mi in range(m1):
+                Pm12[mi][ni, nj] = data[idx]
+                idx += 1
+    return Pm11, Pm12, Pm21, data[idx:]
+
+
 def expand_public(seed):
-    if ASYMMETRIC_PUBMAT:
+    if MAYO:
+        return expand_public_mayo(seed)
+    elif ASYMMETRIC_PUBMAT:
         return expand_public_asym(seed)
     else:
         return expand_public_sym(seed)
@@ -320,20 +395,29 @@ def compress_p22(pub22):
     # Pack the generated public key as bytes
     pk = bytearray()
     res = []
-    for mi in range(m1):
+    if MAYO:
         for ni in range(o):
-            if ASYMMETRIC_PUBMAT:
-                for nj in range(o):
+            for nj in range(ni, o):
+                for mi in range(m1):
+                    if ni == nj:
+                        res.append(pub22[mi][ni, nj])
+                    else:
+                        res.append(pub22[mi][ni, nj] + pub22[mi][nj, ni])
+    else:
+        for mi in range(m1):
+            for ni in range(o):
+                if ASYMMETRIC_PUBMAT:
+                    for nj in range(o):
+                        for i1 in range(l):
+                            for j1 in range(l):
+                                res.append(pub22[mi][ni * l + i1, nj * l + j1])
+                else:
                     for i1 in range(l):
-                        for j1 in range(l):
-                            res.append(pub22[mi][ni * l + i1, nj * l + j1])
-            else:
-                for i1 in range(l):
-                    for j1 in range(i1, l):
-                        res.append(pub22[mi][ni * l + i1, ni * l + j1])
-                    for nj in range(ni + 1, o):
-                        for j1 in range(l):
-                            res.append(pub22[mi][ni * l + i1, nj * l + j1])
+                        for j1 in range(i1, l):
+                            res.append(pub22[mi][ni * l + i1, ni * l + j1])
+                        for nj in range(ni + 1, o):
+                            for j1 in range(l):
+                                res.append(pub22[mi][ni * l + i1, nj * l + j1])
     pk += compress_gf(res, NUMGF_PK)
     return pk
 
@@ -341,34 +425,73 @@ def compress_p22(pub22):
 def expand_p22(p22bytes):
     # Expand public key
     data = expand_gf(p22bytes, NUMGF_PK)
-    P22 = []
     idx = 0
-    for _ in range(m1):
-        pub22 = matrix(GF_q, o * l, o * l)
+    if MAYO:
+        P22 = [matrix(GF_q, o * l, o * l) for _ in range(m1)]
         for ni in range(o):
-            if ASYMMETRIC_PUBMAT:
-                for nj in range(o):
+            for nj in range(ni, o):
+                for mi in range(m1):
+                    P22[mi][ni, nj] = data[idx]
+                    idx += 1
+    else:
+        P22 = []
+        for _ in range(m1):
+            pub22 = matrix(GF_q, o * l, o * l)
+            for ni in range(o):
+                if ASYMMETRIC_PUBMAT:
+                    for nj in range(o):
+                        for i1 in range(l):
+                            for j1 in range(l):
+                                pub22[ni * l + i1, nj * l + j1] = data[idx]
+                                idx += 1
+                else:
                     for i1 in range(l):
-                        for j1 in range(l):
-                            pub22[ni * l + i1, nj * l + j1] = data[idx]
+                        for j1 in range(i1, l):
+                            pub22[ni * l + i1, ni * l + j1] = data[idx]
+                            pub22[ni * l + j1, ni * l + i1] = data[idx]
                             idx += 1
-            else:
-                for i1 in range(l):
-                    for j1 in range(i1, l):
-                        pub22[ni * l + i1, ni * l + j1] = data[idx]
-                        pub22[ni * l + j1, ni * l + i1] = data[idx]
-                        idx += 1
-                    for nj in range(ni + 1, o):
-                        for j1 in range(l):
-                            pub22[ni * l + i1, nj * l + j1] = data[idx]
-                            pub22[nj * l + j1, ni * l + i1] = data[idx]
-                            idx += 1
-        P22.append(pub22)
+                        for nj in range(ni + 1, o):
+                            for j1 in range(l):
+                                pub22[ni * l + i1, nj * l + j1] = data[idx]
+                                pub22[nj * l + j1, ni * l + i1] = data[idx]
+                                idx += 1
+            P22.append(pub22)
     return P22
 
 
-def gen_ABQ(abqdata):
-    # Generate public ABQ from XOF data
+def decode_sig(sig_bytes):
+    # Decode sig
+    if MAYO:
+        salt = sig_bytes[-24:]
+    else:
+        salt = sig_bytes[-16:]
+    gfsig = expand_gf(sig_bytes[:-16], n * l * r)
+    if len(gfsig) < n * l * r:
+        raise Exception('Verify failed.')
+    if MAYO:
+        sig = matrix(GF_q, n * l, r, lambda i, j: gfsig[j * n * l + i])
+    else:
+        sig = matrix(GF_q, n * l, r, lambda i, j: gfsig[i * r + j])
+
+    return sig, salt
+
+
+# Generate E matrix
+
+def gen_E(abqdata):
+    if MAYO:
+        import mayo_emat
+        emat = [[[matrix(GF_q, m1, r**2, lambda mj, i1: from_int(mayo_emat.mayo1[mi][0][0][mj][i1]))
+                  for a in range(l)] for b in range(l)] for mi in range(m1)]
+        return emat
+
+    if RANDOM_E:
+        NUM_E = m1 * m2 * r**2 * l**2
+        e_bytes = hashlib.shake_256(b'SNOVA_E').digest(NUM_E)
+        e_data = convert_bytes_to_GF(e_bytes)
+        emat = [[[matrix(GF_q, m2, r**2, lambda i, j: e_data[(((a * l + b) * m1 + mi) * m2 + i) * r**2 + j])
+                 for a in range(l)] for b in range(l)] for mi in range(m1)]
+        return emat
 
     def create_AB(data, r1, r2):
         # Generate invertible matrices
@@ -393,8 +516,20 @@ def gen_ABQ(abqdata):
     q1 = [nonzero_q(abqdata[o * n_alpha * r * (r + l) + i * l:]) for i in range(o * n_alpha)]
     q2 = [nonzero_q(abqdata[o * n_alpha * r * (r + l) + o * n_alpha * l + i * l:]) for i in range(o * n_alpha)]
 
-    return A, B, q1, q2
-
+    emat = [[[matrix(GF_q, m2, r**2) for a in range(l)] for b in range(l)] for mi in range(m1)]
+    for mi in range(o):
+        for alpha in range(n_alpha):
+            mia = mi * n_alpha + alpha
+            mi_prime = (mi + alpha) % m1
+            for a in range(l):
+                for b in range(l):
+                    for i1 in range(l):
+                        for i2 in range(r):
+                            for j1 in range(r):
+                                for j2 in range(r):
+                                    emat[mi_prime][a][b][mi * l * r + i1 * r + i2, j1 * r + j2] += \
+                                        A[mia][i2, j1] * q1[mia][a] * q2[mia][b] * B[mia][j2, i1]
+    return emat
 
 ################################################################
 
@@ -404,26 +539,45 @@ def gen_ABQ(abqdata):
 
 def genkeys(seed):
     # Generate Public key
-    sk_seed = seed[16:]
-    T12 = expand_T12(sk_seed)
+    if MAYO:
+        sk_seed = seed[:24]
+        sk = sk_seed
+        sk_data = hashlib.shake_256(sk_seed).digest(2 * o * v * l)  # Overdimensioned
+        pk_seed = sk_data[:16]
+        t12data = sk_data[16:]
+    else:
+        sk_seed = seed[16:]
+        sk = seed
+        pk_seed = seed[:16]
+        t12data = hashlib.shake_256(sk_seed).digest(2 * o * v * l)  # Overdimensioned
 
-    pk_seed = seed[:16]
+    T12 = expand_T12(t12data)
     P11, P12, P21, _ = expand_public(pk_seed)
 
     P22 = [-(T12.transpose() * (P11[mi] * T12 + P12[mi]) + P21[mi] * T12) for mi in range(m1)]
 
-    return seed, pk_seed + compress_p22(P22)
+    return sk, pk_seed + compress_p22(P22)
 
 
 # Sign message
 
 def sign(sk, msg, salt):
-    # Sign message
-    sk_seed = sk[16:]
-    T12 = expand_T12(sk_seed)
+    if MAYO:
+        sk_seed = sk[:24]
+        sk_data = hashlib.shake_256(sk_seed).digest(2 * o * v * l)  # Overdimensioned
+        pk_seed = sk_data[:16]
+        t12data = sk_data[16:]
+        m_g = m1
+    else:
+        sk_seed = sk[16:]
+        pk_seed = sk[:16]
+        t12data = hashlib.shake_256(sk_seed).digest(2 * o * v * l)  # Overdimensioned
+        m_g = m2
 
-    pk_seed = sk[:16]
+    T12 = expand_T12(t12data)
+
     P11, P12, P21, abqdata = expand_public(pk_seed)
+    emat = gen_E(abqdata)
 
     # Expand private key
     F12 = []
@@ -431,22 +585,6 @@ def sign(sk, msg, salt):
     for mi in range(m1):
         F12.append(P11[mi] * T12 + P12[mi])
         F21.append(T12.transpose() * P11[mi] + P21[mi])
-
-    A, B, q1, q2 = gen_ABQ(abqdata)
-
-    Q1 = []
-    Q2 = []
-
-    for idx in range(o * n_alpha):
-        q1mat = matrix(GF_q, l, l)
-        q2mat = matrix(GF_q, l, l)
-        for ab in range(l):
-            q1mat += q1[idx][ab] * S**ab
-            q2mat += q2[idx][ab] * S**ab
-        Q1.append(q1mat)
-        Q2.append(q2mat)
-
-    msg_hash = hash_combined(msg, pk_seed, salt)
 
     num_sign = 0
     while True:
@@ -457,61 +595,71 @@ def sign(sk, msg, salt):
         # Assign values to vinegar variables
         # Vinegar from sk and salt
 
-        v_state = shake_256(sk_seed + shake_256(msg).digest(64) + salt + num_sign.to_bytes(1))
-        vinegar_byte = v_state.digest(BYTES_GF(v * l * r))
-        vinegar_gf = expand_gf(vinegar_byte, v * l * r)
-        vinegar = matrix(GF_q, v * l, r, lambda i, j: vinegar_gf[i * r + j])
+        if MAYO:
+            dgst = hashlib.shake_256(msg).digest(32)
+            salt_byte = hashlib.shake_256(dgst + salt + sk_seed).digest(24)
+            msg_hash = hash_combined(msg, pk_seed, salt_byte)
+            vinegar_byte = hashlib.shake_256(dgst + salt_byte + sk_seed + bytes([num_sign - 1])).digest(BYTES_GF(r * n))
+            vinegar_gf = expand_gf(vinegar_byte, n * l * r)
+            vinegar = matrix(GF_q, v * l, r, lambda i, j: vinegar_gf[j * v + i])
+            rvec = vector([vinegar_gf[v * l * r + j1 * o * l + i1] for j1 in range(r) for i1 in range(o * l)])
+        else:
+            salt_byte = salt
+            msg_hash = hash_combined(msg, pk_seed, salt_byte)
+            v_state = hashlib.shake_256()
+            v_state.update(sk_seed)
+            dgst = hashlib.shake_256(msg).digest(64)
+            v_state.update(dgst)
+            v_state.update(salt)
+            v_state.update(num_sign.to_bytes(1))
+            vinegar_byte = v_state.digest(BYTES_GF(v * l * r))
+            vinegar_gf = expand_gf(vinegar_byte, v * l * r)
+            vinegar = matrix(GF_q, v * l, r, lambda i, j: vinegar_gf[i * r + j])
+            rvec = vector(GF_q, m2)
 
         # Compute the vinegar part of the central map
         p_vin = [[[vinegar.transpose() * S_times_v**b * P11[mi] * S_times_v**a * vinegar
                    for a in range(l)] for b in range(l)] for mi in range(m1)]
 
         # Apply emulsifier
-        temp = [matrix(GF_q, r, l) for mi in range(o)]
-        for mi in range(o):
-            for alpha in range(n_alpha):
-                mia = mi * n_alpha + alpha
-                mi_prime = (mi + alpha) % m1
-                pqq = matrix(GF_q, r, r)
-                for a in range(l):
-                    for b in range(l):
-                        pqq += q1[mia][a] * p_vin[mi_prime][a][b] * q2[mia][b]
-                temp[mi] += A[mia] * pqq * B[mia]
-        F_vv = [temp[mi][i1][j1] for mi in range(o) for j1 in range(l) for i1 in range(r)]
+        res = vector(GF_q, m_g)
+        for mi in range(m1):
+            for a in range(l):
+                for b in range(l):
+                    vin_vec = vector([p_vin[mi][a][b][i1, j1] for i1 in range(r) for j1 in range(r)])
+                    res += emat[mi][a][b] * vin_vec
+        F_vv = list(res)
 
         # Get msg vinegar part
-        msg_vv = vector([msg_hash[idx] - F_vv[idx] for idx in range(o * l * r)])
+        msg_vv = vector([msg_hash[idx] - F_vv[idx] for idx in range(m_g)])
 
         # Compute the coefficient matrix of the oil variable
         # compute the coefficients of Xo and put into gauss matrix
-        gauss = matrix(GF_q, o * l * r, o * l * r)
-        for mi in range(o):
-            for alpha in range(n_alpha):
-                mia = mi * n_alpha + alpha
-                mi_prime = (mi + alpha) % m1
+        F21_ab = [[[S_times_o**b * F21[mi] * S_times_v**a * vinegar
+                    for a in range(l)] for b in range(l)] for mi in range(m1)]
+        F12_ab = [[[vinegar.transpose() * S_times_v**b * F12[mi] * S_times_o**a
+                    for a in range(l)] for b in range(l)] for mi in range(m1)]
 
-                Q1_v = matrix.block_diagonal([Q1[mia] for _ in range(v)])
-                Q1_o = matrix.block_diagonal([Q1[mia] for _ in range(o)])
-                Q2_v = matrix.block_diagonal([Q2[mia] for _ in range(v)])
-                Q2_o = matrix.block_diagonal([Q2[mia] for _ in range(o)])
+        A = matrix(GF_q, m_g, m2)
+        for ti1 in range(m_g):
+            for tj1 in range(o * l):
+                for tj2 in range(r):
+                    for mi_prime in range(m1):
+                        for a in range(l):
+                            for b in range(l):
+                                for k1 in range(r):
+                                    A[ti1, tj2 * o * l + tj1] += \
+                                        emat[mi_prime][a][b][ti1, tj2 * r + k1] \
+                                        * F21_ab[mi_prime][a][b][tj1, k1] \
+                                        + emat[mi_prime][a][b][ti1, k1 * r + tj2] \
+                                        * F12_ab[mi_prime][a][b][k1, tj1]
 
-                temp1 = Q1_o * (F21[mi_prime] * Q2_v * vinegar) * B[mia]
-                temp2 = A[mia] * (vinegar.transpose() * Q1_v * F12[mi_prime]) * Q2_o
-
-                for idx in range(o):
-                    for ti1 in range(l):
-                        for ti2 in range(r):
-                            for tj1 in range(l):
-                                for tj2 in range(r):
-                                    val = temp1[idx * l + tj1, ti1] * A[mia][ti2, tj2] \
-                                        + temp2[ti2, idx * l + tj1] * B[mia][tj2, ti1]
-                                    gauss[mi * l * r + ti1 * r + ti2, idx * l * r + tj1 * r + tj2] += val
-
-        if gauss.det() == 0:
-            # Try with another vinegar value
+        try:
+            solution = A.solve_right(msg_vv - A * rvec) + rvec
+            solution = [solution[tj2 * o * l + tj1] for tj1 in range(o * l) for tj2 in range(r)]
+        except ValueError:
+            # print('no solution')
             continue
-
-        solution = gauss.solve_right(msg_vv)
 
         sol_mat = matrix(GF_q, o * l, r, lambda i, j: solution[i * r + j])
         vinegar += T12 * sol_mat
@@ -521,7 +669,6 @@ def sign(sk, msg, salt):
         # Check for symmetric signature
         ok = True
         if l == r and not ASYMMETRIC_PUBMAT:
-            num_sym = 0
             for idx in range(n):
                 is_sym = True
                 for i1 in range(l):
@@ -529,13 +676,14 @@ def sign(sk, msg, salt):
                         if sig_gf[idx * l * r + i1 * r + j1] != sig_gf[idx * l * r + j1 * r + i1]:
                             is_sym = False
                 if is_sym:
-                    num_sym += 1
-            if num_sym > (n // 4 if l == 2 else 0):
-                ok = False
+                    ok = False
         if ok:
             break
 
-    return compress_gf(sig_gf, n * l * r) + salt
+    if MAYO:
+        sig_gf = [sig_gf[i * r + j] for j in range(r) for i in range(n * l)]
+
+    return compress_gf(sig_gf, n * l * r) + salt_byte
 
 
 # Verify signature of message
@@ -544,15 +692,10 @@ def verify(pk, sig_bytes, msg):
     # Verify signature of message
 
     # Decode sig
-    salt = sig_bytes[-16:]
-    gfsig = expand_gf(sig_bytes[:-16], n * l * r)
-    if len(gfsig) < n * l * r:
-        raise Exception('Verify failed.')
-    sig = matrix(GF_q, n * l, r, lambda i, j: gfsig[i * r + j])
+    sig, salt = decode_sig(sig_bytes)
 
     # Check for symmetric signature
     if l == r and not ASYMMETRIC_PUBMAT:
-        num_sym = 0
         for idx in range(n):
             is_sym = True
             for i1 in range(l):
@@ -560,33 +703,28 @@ def verify(pk, sig_bytes, msg):
                     if sig[idx * l + i1, j1] != sig[idx * l + j1, i1]:
                         is_sym = False
             if is_sym:
-                num_sym += 1
-        if num_sym > (n // 4 if l == 2 else 0):
-            raise Exception('Verify failed!')
+                raise Exception('Verify failed!')
 
     # Expand pubkey
     pk_seed = pk[:16]
     P11, P12, P21, abqdata = expand_public(pk_seed)
     P22 = expand_p22(pk[16:])
     P = [matrix.block([[P11[mi], P12[mi]], [P21[mi], P22[mi]]]) for mi in range(m1)]
-    A, B, q1, q2 = gen_ABQ(abqdata)
 
     # Whip-up signature
     p_sig = [[[sig.transpose() * S_times_n**b * P[mi] * S_times_n**a * sig
                for a in range(l)] for b in range(l)] for mi in range(m1)]
 
     # Apply emulsifier
-    temp = [matrix(GF_q, r, l) for mi in range(o)]
-    for mi in range(o):
-        for alpha in range(n_alpha):
-            mia = mi * n_alpha + alpha
-            mi_prime = (mi + alpha) % m1
-            pqq = matrix(GF_q, r, r)
-            for a in range(l):
-                for b in range(l):
-                    pqq += q1[mia][a] * p_sig[mi_prime][a][b] * q2[mia][b]
-            temp[mi] += A[mia] * pqq * B[mia]
-    sig_hash = [temp[mi][i1][j1] for mi in range(o) for j1 in range(l) for i1 in range(r)]
+    emat = gen_E(abqdata)
+
+    res = vector(GF_q, emat[0][0][0].nrows())
+    for mi in range(m1):
+        for a in range(l):
+            for b in range(l):
+                sig_vec = vector([p_sig[mi][a][b][i1, j1] for i1 in range(r) for j1 in range(r)])
+                res += emat[mi][a][b] * sig_vec
+    sig_hash = list(res)
 
     # Check against expected hash
     msg_hash = hash_combined(msg, pk_seed, salt)
@@ -597,21 +735,28 @@ def verify(pk, sig_bytes, msg):
 
 ################################################################
 
+
 # Generate KATs
 entropy_input = bytearray(48)
 for i in range(48):
     entropy_input[i] = i
 drbg = nistrng.rng(entropy_input)
+srbdg = nistrng.rng(entropy_input)
 
-print('# SNOVA', v, o, q, l, 'AES' if aes else 'SHAKE', r, m1, n_alpha)
+print('# SNOVA', v, o, q, l, aes, r, m1)
 print()
 
 for count in range(1):
     seed = drbg.random_bytes(48)
     srbdg = nistrng.rng(seed)
 
-    keygen_seed = srbdg.random_bytes(48)
-    salt = srbdg.random_bytes(16)
+    if MAYO:
+        keygen_seed = srbdg.random_bytes(24)
+        salt = srbdg.random_bytes(24)
+    else:
+        keygen_seed = srbdg.random_bytes(48)
+        salt = srbdg.random_bytes(16)
+
     mlen = 33 * (count + 1)
     msg = drbg.random_bytes(mlen)
 

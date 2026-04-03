@@ -38,15 +38,15 @@ NIST employees is not subject to copyright protection within the United States.
 #define SNOVA_XOF
 #endif
 
-#ifdef ASYMMETRIC
-#define SNOVA_ASYM _asym
+#if SNOVA_l == SNOVA_r
+#define SNOVA_JOIN_(a, b, c, d, e) SNOVA_##a##_##b##_##c##_##d##e
+#define SNOVA_JOIN(a, b, c, d, e) SNOVA_JOIN_(a, b, c, d, e)
+#define CRYPTO_ALGNAME_ SNOVA_JOIN(SNOVA_v, SNOVA_o, SNOVA_q, SNOVA_l, SNOVA_XOF)
 #else
-#define SNOVA_ASYM
+#define SNOVA_JOIN_(a, b, c, d, r, e) SNOVA_##a##_##b##_##c##_##d##x##r##e
+#define SNOVA_JOIN(a, b, c, d, r, e) SNOVA_JOIN_(a, b, c, d, r, e)
+#define CRYPTO_ALGNAME_ SNOVA_JOIN(SNOVA_v, SNOVA_o, SNOVA_q, SNOVA_l, SNOVA_r, SNOVA_XOF)
 #endif
-
-#define SNOVA_JOIN_(a, b, c, d, e, f) SNOVA_##a##_##b##_##c##_##d##e##f
-#define SNOVA_JOIN(a, b, c, d, e, f) SNOVA_JOIN_(a, b, c, d, e, f)
-#define CRYPTO_ALGNAME_ SNOVA_JOIN(SNOVA_v, SNOVA_o, SNOVA_q, SNOVA_l, SNOVA_XOF, SNOVA_ASYM)
 #define str(s) #s
 #define xstr(s) str(s)
 #define CRYPTO_ALGNAME xstr(CRYPTO_ALGNAME_)

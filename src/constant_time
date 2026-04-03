@@ -13,25 +13,51 @@
 {
    Rejection sampling of secret key
    Memcheck:Value8
-   src:snova_opt_q.c:453
+   src:snova_opt_q.c:449
 }
 
 {
    Rejection sampling of secret key
    Memcheck:Cond
-   src:snova_opt_q.c:446
+   src:snova_opt_q.c:442
 }
 
 {
    Rejection sampling when no valid solution was found, Odd q
    Memcheck:Cond
-   src:snova_opt_q.c:1151
+   src:snova_opt_q.c:1148
 }
 
 {
    Rejection sampling when no valid solution was found, Odd q
    Memcheck:Cond
-   src:snova_opt_q.c:1202
+   src:snova_opt_q.c:1203
+}
+
+# Odd q, l=2
+
+{
+   Rejection sampling of secret key
+   Memcheck:Value8
+   src:snova_opt_q2.c:444
+}
+
+{
+   Rejection sampling of secret key
+   Memcheck:Cond
+   src:snova_opt_q2.c:437
+}
+
+{
+   Rejection sampling when no valid solution was found, Odd q
+   Memcheck:Cond
+   src:snova_opt_q2.c:1036
+}
+
+{
+   Rejection sampling when no valid solution was found, Odd q
+   Memcheck:Cond
+   src:snova_opt_q2.c:1091
 }
 
 # q=16
@@ -39,13 +65,13 @@
 {
    Rejection sampling when no valid solution was found, Optimized q=16
    Memcheck:Cond
-   src:snova_opt_16.c:972
+   src:snova_opt_16.c:1004
 }
 
 {
    Rejection sampling when no valid solution was found, Optimized q=16
    Memcheck:Cond
-   src:snova_opt_16.c:1004
+   src:snova_opt_16.c:1036
 }
 
 # AVX2, q=16
@@ -69,6 +95,35 @@
    ...
    fun:sign_digest_core_gnl_vtl
 }
+
+# AVX2, Rectangular
+
+{
+   Rejection sampling of secret key
+   Memcheck:Value8
+   src:snova_rect_q.c:452
+}
+
+{
+   Rejection sampling of secret key
+   Memcheck:Cond
+   src:snova_rect_q.c:445
+}
+
+{
+   Rejection sampling when no valid solution was found, Odd q
+   Memcheck:Cond
+   src:snova_rect_q.c:1076
+}
+
+# q=16, Rectangular
+
+{
+   Rejection sampling when no valid solution was found, q=16, no GFNI
+   Memcheck:Cond
+   src:snova_rect_16.c:1026
+}
+
 
 # Only dependent on Public key
 
@@ -148,12 +203,20 @@
 {
    Condition depends on the function return value
    Memcheck:Cond
-   src:sign.c:58
+   src:sign.c:56
+}
+
+{
+   Verify function
+   Memcheck:Value8
+   ...
+   fun:crypto_sign_open
 }
 
 {
    Verify function
    Memcheck:Cond
+   ...
    fun:crypto_sign_open
 }
 

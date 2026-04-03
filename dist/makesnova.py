@@ -2,17 +2,26 @@ import shutil
 import os
 
 params = [
-    [26, 5, 19, 4],
+    [28, 5, 19, 4],
     [24, 5, 16, 4],
     [48, 17, 16, 2],
+    [48, 16, 19, 2],
+    [28, 4, 16, 4, 5],
+    [28, 4, 19, 4, 5],
 
-    [37, 8, 19, 4],
+    [40, 7, 19, 4],
     [37, 8, 16, 4],
     [72, 25, 16, 2],
+    [72, 24, 19, 2],
+    [38, 5, 16, 4, 5],
+    [38, 5, 19, 4, 5],
 
-    [60, 10, 19, 4],
+    [50, 9, 19, 4],
     [60, 10, 16, 4],
     [97, 33, 16, 2],
+    [96, 32, 19, 2],
+    [52, 6, 16, 4, 6],
+    [52, 6, 19, 4, 6],
 ]
 
 
@@ -30,9 +39,13 @@ for param in params:
     o = param[1]
     q = param[2]
     l = param[3]
+    if len(param) > 4:
+        r = param[4]
+    else:
+        r = l
     for aes in [True, False]:
-        print('''\tmake -C SNOVA_{}_{}_{}_{}{} kat'''.format(
-            v, o, q, l, '_AES' if aes else ''), file=mf)
+        name = f"SNOVA_{v}_{o}_{q}_{l if l == r else f'{l}x{r}'}{'_AES' if aes else ''}"
+        print(f'\tmake -C {name} kat', file=mf)
 
 print('\nspeed:', file=mf)
 for param in params:
@@ -40,9 +53,13 @@ for param in params:
     o = param[1]
     q = param[2]
     l = param[3]
+    if len(param) > 4:
+        r = param[4]
+    else:
+        r = l
     for aes in [True, False]:
-        print('''\t@make -C SNOVA_{}_{}_{}_{}{} speed'''.format(
-            v, o, q, l, '_AES' if aes else ''), file=mf)
+        name = f"SNOVA_{v}_{o}_{q}_{l if l == r else f'{l}x{r}'}{'_AES' if aes else ''}"
+        print(f'\t@make -C {name} speed', file=mf)
 
 print('\nclean:', file=mf)
 for param in params:
@@ -50,9 +67,13 @@ for param in params:
     o = param[1]
     q = param[2]
     l = param[3]
+    if len(param) > 4:
+        r = param[4]
+    else:
+        r = l
     for aes in [True, False]:
-        print('''\tmake -C SNOVA_{}_{}_{}_{}{} clean'''.format(
-            v, o, q, l, '_AES' if aes else ''), file=mf)
+        name = f"SNOVA_{v}_{o}_{q}_{l if l == r else f'{l}x{r}'}{'_AES' if aes else ''}"
+        print(f'\tmake -C {name} clean', file=mf)
 
 mf.close()
 
@@ -101,8 +122,8 @@ for target in ['ref', 'opt', 'avx2']:
             r = l
         for aes in [True, False]:
 
-            dirname = target + '/SNOVA_{}_{}_{}_{}{}/'.format(
-                v, o, q, l, '_AES' if aes else '')
+            name = f"SNOVA_{v}_{o}_{q}_{l if l == r else f'{l}x{r}'}{'_AES' if aes else ''}"
+            dirname = target + '/' + name + '/'
 
             if target == 'ref':
                 os.makedirs(dirname)
@@ -111,11 +132,11 @@ for target in ['ref', 'opt', 'avx2']:
                     shutil.copy(source_dir + file, dirname)
             else:
                 if r != l:
-                    snova_src = 'snova_opt_16' if q == 16 else 'snova_rect_q'
+                    snova_src = 'snova_rect_16' if q == 16 else 'snova_rect_q'
                 elif q == 16:
                     snova_src = 'snova_opt_16' if target == 'opt' or l == 4 else 'snova_avx2_16'
                 else:
-                    snova_src = 'snova_opt_q'
+                    snova_src = 'snova_opt_q2' if l == 2 else 'snova_opt_q'
 
                 os.makedirs(dirname)
                 with open('Makefile.opt') as infile:

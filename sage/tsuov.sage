@@ -1,46 +1,113 @@
 # SPDX-License-Identifier: MIT
 #
-# SNOVA implementation in SageMath
+# TSUOV implementation in SageMath
 #
 # Copyright (c) 2025 SNOVA TEAM
 
-from hashlib import shake_128, shake_256
-import math
+import hashlib
 import traceback
 
-try:
-    import nistrng
-except:
-    print('Error importing nistrng')
-    print('Try: export PYTHONPATH=`pwd`')
-    quit()
+################################################################
+
+# TSUOV parameters
+
+if True:
+    # TSUOV
+
+    q = 31
+    v = 60
+    o = 4
+    l = 1
+    l_qr = 2
+    r = 11
+
+    m1 = 61
+    m2 = o * l * r
+    RANDOM_E = True
+    SNOVA = False
+
+elif True:
+    # SNOVA_24_5_23_4
+
+    v = 24
+    o = 5
+    q = 23
+    l = 4
+    l_qr = 1
+
+    r = l
+    m1 = o
+    m2 = o * l * r
+    RANDOM_E = False
+    SNOVA = True
+
+elif True:
+    # RectSNOVA candidate
+
+    v = 37
+    o = 6
+    q = 19
+    l = 2
+    l_qr = 1
+    r = 6
+    m1 = 17
+    m2 = o * l * r
+    RANDOM_E = False
+    SNOVA = False
+
+elif False:
+    # QR-UOV qruov1q127L3v156m54refa params, KATs differ
+
+    q = 127
+    v = 52
+    o = 18
+    l = 1
+    l_qr = 3
+    r = l
+
+    m1 = o * l_qr
+    m2 = o * l * r
+    RANDOM_E = True
+    SNOVA = False
+
+else:
+    # SNOVA / TSUOV hybrid
+
+    q = 19
+    v = 30
+    o = 4
+    l = 2
+    l_qr = 2
+    r = 5
+
+    m1 = o * l_qr * r
+    m2 = o * l * r
+    RANDOM_E = True
+    SNOVA = False
+
 
 ################################################################
 
-# SNOVA parameters
-
-v = 28
-o = 5
-q = 19
-l = 4
-r = l
-aes = False
-
-# Derived RectSNOVA parameters
-
-m1 = math.ceil(o * r / l)
-n_alpha = l * r + r
-
-################################################################
-
+n_alpha = r * r + r
 n = v + o
 
 ASYMMETRIC_PUBMAT = q == 16
+SIGN_DIGEST = l == r and q == 16
 
 # Set GF
 
 GF_q = GF(q, 'x')
 x = GF_q.gen()
+
+
+if q == 31 and l_qr == 2:
+    GF_q_poly = GF_q['y']
+    y = GF_q_poly.gen()
+    GF_ext = GF_q_poly.extension(y**2 - 3 * y - 1, names='z')
+else:
+    GF_ext = GF(q**l_qr, 'z')
+z = GF_ext.gen()
+
 
 if q == 16:
     def from_int(x): return GF_q.from_integer(x)
@@ -70,15 +137,44 @@ elif q == 23:
     PACK_GF = 7
     PACK_BYTES = 4
 
+elif q == 31:
+    Q_A = 2
+    Q_B = 5
+    Q_C = 8
+    PACK_GF = 8
+    PACK_BYTES = 5
+
+elif q == 127:
+    Q_A = 1
+    Q_B = 11
+    Q_C = 22
+    PACK_GF = 8
+    PACK_BYTES = 7
+
+
+if SNOVA:
+    try:
+        from nistrng import rng
+    except:
+        print('Error importing nistrng')
+        print('Try: export PYTHONPATH=`pwd`')
+        quit()
+else:
+    class rng:
+        def __init__(self, seed):
+            self.xof = hashlib.shake_256(seed)
+
+        def random_bytes(self, num):
+            return self.xof.digest(num)
 
 # Derived constants
+
 
 def BYTES_GF(x):
     return (PACK_BYTES * (x) + PACK_GF - 1) // PACK_GF
 
 
-GF16_HASH = o * l * r
-BYTES_HASH = BYTES_GF(GF16_HASH)
+GF16_HASH = m2 * l_qr
 
 if ASYMMETRIC_PUBMAT:
     NUM_GEN_PUB_GF = m1 * (v * v + 2 * v * o) * l**2 + o * n_alpha * (r * (r + l) + 2 * l)
@@ -88,9 +184,9 @@ else:
     NUMGF_PK = m1 * o * l * (o * l + 1) // 2
 
 if q == 16:
-    NUM_GEN_PUB_BYTES = math.ceil((NUM_GEN_PUB_GF + 1) / 2)
+    NUM_GEN_PUB_BYTES = NUM_GEN_PUB_GF // 2 * l_qr
 else:
-    NUM_GEN_PUB_BYTES = NUM_GEN_PUB_GF
+    NUM_GEN_PUB_BYTES = NUM_GEN_PUB_GF * l_qr
 
 
 # Create the S matrix
@@ -107,29 +203,48 @@ else:
             S[j, i] = S[i, j]
     S[l - 1, l - 1] = Q_C
 
+
+S_times_o = matrix.block_diagonal([S for _ in range(o)])
 S_times_v = matrix.block_diagonal([S for _ in range(v)])
 S_times_n = matrix.block_diagonal([S for _ in range(n)])
 
 
 # Utils
 
-def expand_gf(data, num):
+def expand_gf(data, num, ext=False):
     # Convert bytes to elements of $\mathbb{F}_{q}$
     res = []
     idx = 0
     while idx < len(data):
-        sum = 0
+        bsum = 0
         for i in range(min(PACK_BYTES, len(data) - idx)):
-            sum += int(data[idx + i]) * int(256**i)
+            bsum += int(data[idx + i]) * int(256**i)
         idx += PACK_BYTES
-        for i in range(PACK_GF):
-            res.append(from_int(int(sum) % q))
-            sum = sum // q
+        if q == 16:
+            res.append(from_int(int(bsum) % 16))
+            res.append(from_int(int(bsum / 16) % 16))
+            bsum = bsum // 256
+        else:
+            for i in range(PACK_GF):
+                res.append(from_int(int(bsum) % q))
+                bsum = bsum // q
+    if ext and l_qr > 1:
+        resx = []
+        for i1 in range(num // l_qr):
+            resx.append(sum([z**j1 * res[i1 * l_qr + j1] for j1 in range(l_qr)]))
+        res = resx
     return res[:num]
 
 
-def compress_gf(data, num):
+def compress_gf(data, num, ext=False):
     # Convert elements of $\mathbb{F}_{q}$ to bytes
+    if ext and l_qr > 1:
+        # Coerce to GF_ext, forces unresolved calculations
+        xdata = vector(GF_ext, data)
+        d1 = []
+        for i1 in range(num // l_qr):
+            d1 += xdata[i1].list()
+        data = d1
     res = []
     idx = 0
     while idx < len(data):
@@ -145,52 +260,60 @@ def compress_gf(data, num):
 
 def hash_combined(msg, pk_seed, salt):
     # Get message hash in $\mathbb{F}_{q}$
-    res = shake_256(pk_seed + shake_256(msg).digest(64) + salt).digest(BYTES_HASH)
-    res_gf = expand_gf(res, GF16_HASH)
+    state = hashlib.shake_256()
+    if SIGN_DIGEST:
+        state.update(pk_seed)
+        dgst = hashlib.shake_256(msg).digest(64)
+        state.update(dgst)
+    else:
+        state.update(pk_seed)
+        state.update(msg)
+    state.update(salt)
+    res = state.digest(BYTES_GF(GF16_HASH))
 
-    # Necessary to be compliant to KATs from C-Reference
-    msg_hash = [res_gf[mi * l * r + j1 * l + i1] for mi in range(o) for i1 in range(l) for j1 in range(r)]
+    if l_qr > 1:
+        res_gf = expand_gf(res, GF16_HASH, ext=False)
+        msg_hash = res_gf[:m2 * l_qr]
+    else:
+        res_gf = expand_gf(res, GF16_HASH)
+        # Necessary to be compliant to KATs from C-Reference
+        msg_hash = [res_gf[mi * l * r + j1 * l + i1] for mi in range(o) for i1 in range(l) for j1 in range(r)]
 
-    return msg_hash
+    return msg_hash, res
 
 
 # XOF
 
 def snova_xof(seed):
     # $\texttt{SNOVA{\_}SHAKE}$ public key expansion
-    if aes:
-        return nistrng.aesctr(seed, NUM_GEN_PUB_BYTES)
-    else:
-        # snova_shake
-        blocks = (NUM_GEN_PUB_BYTES + 167) // 168
-        res = bytearray()
-        for i in range(blocks):
-            blockseed = bytearray(seed)
-            for j in range(8):
-                blockseed.append((i >> (8 * j)) % 256)
-            res += shake_128(blockseed).digest(168)
-        return bytes(res[:NUM_GEN_PUB_BYTES])
+    blocks = (NUM_GEN_PUB_BYTES + 167) // 168
+    res = bytearray()
+    for i in range(blocks):
+        blockseed = bytearray(seed)
+        for j in range(8):
+            blockseed.append((i >> (8 * j)) % 256)
+        res += hashlib.shake_128(blockseed).digest(168)
+    return bytes(res[:NUM_GEN_PUB_BYTES])
 
 
 # Expand secret
 
-def expand_T12(seed):
+def expand_T12(sk_data):
     # Generate the secret map $T_{12}$
 
     def gen_a_FqS(coefs):
         # Generate elements of $\mathbb{F}_{q}[S]$
-        if coefs[l - 1] == 0:
-            coefs[l - 1] = q - (coefs[0] if coefs[0] != 0 else 1)
-        F = matrix(GF_q, l, l)
-        for i in range(l):
-            F += S**i * from_int(coefs[i])
+        if SNOVA and coefs[l * l_qr - 1] == 0:
+            coefs[l * l_qr - 1] = q - (coefs[0] if coefs[0] != 0 else 1)
+        F = matrix(GF_ext, l, l)
+        for i1 in range(l):
+            F += S**i1 * sum([z**j1 * from_int(coefs[i1 * l_qr + j1]) for j1 in range(l_qr)])
         return F
 
-    sk_data = shake_256(seed).digest(2 * o * v * l)  # Overdimensioned
     coef = []
     idx = 0
     i = 0
-    while i < o * v * l:
+    while i < o * v * l * l_qr:
         b = sk_data[idx]
         if q == 16:
             coef.append(b % 16)
@@ -201,10 +324,10 @@ def expand_T12(seed):
                 coef.append(b % q)
                 i += 1
         idx += 1
-    T12 = [gen_a_FqS(coef[l * i:]) for i in range(o * v)]
+    T12 = [gen_a_FqS(coef[l * l_qr * i:]) for i in range(o * v)]
 
     # Convert to a single matrix
-    T12m = matrix(GF_q, v * l, o * l)
+    T12m = matrix(GF_ext, v * l, o * l)
     for ni in range(v):
         for nj in range(o):
             for i1 in range(l):
@@ -229,7 +352,7 @@ def convert_bytes_to_GF(data):
 
 def fixed_abq():
     NUM_ABQ = o * n_alpha * (r * (r + l) + 2 * l)
-    abqdata = shake_256(b'SNOVA_ABQ').digest(NUM_ABQ)
+    abqdata = hashlib.shake_256(b'SNOVA_ABQ').digest(NUM_ABQ)
     return convert_bytes_to_GF(abqdata)
 
 
@@ -237,15 +360,17 @@ def expand_public_sym(seed):
     # Generate the random part of public key for odd $q$
     bindata = snova_xof(seed)
     data = convert_bytes_to_GF(bindata)
+    if l_qr > 1:
+        data = [sum([z**j1 * data[i1 * l_qr + j1] for j1 in range(l_qr)]) for i1 in range(len(data) // l_qr)]
 
     idx = 0
     Pm11 = []
     Pm12 = []
     Pm21 = []
     for _ in range(m1):
-        p11 = matrix(GF_q, v * l, v * l)
-        p12 = matrix(GF_q, v * l, o * l)
-        p21 = matrix(GF_q, o * l, v * l)
+        p11 = matrix(GF_ext, v * l, v * l)
+        p12 = matrix(GF_ext, v * l, o * l)
+        p21 = matrix(GF_ext, o * l, v * l)
         for ni in range(v):
             for i1 in range(l):
                 for j1 in range(i1, l):
@@ -267,18 +392,20 @@ def expand_public_sym(seed):
         Pm11.append(p11)
         Pm12.append(p12)
         Pm21.append(p21)
-    return Pm11, Pm12, Pm21, fixed_abq() if l < 4 or q != 16 else data[idx:]
+    return Pm11, Pm12, Pm21, fixed_abq() if l < 4 else data[idx:]
 
 
 def expand_public_asym(seed):
     # Generate the random part of public key for $q=16$
     bindata = snova_xof(seed)
     data = convert_bytes_to_GF(bindata)
+    if l_qr > 1:
+        data = [sum([z**j1 * data[i1 * l_qr + j1] for j1 in range(l_qr)]) for i1 in range(len(data) // l_qr)]
 
     idx = 0
     Pm11 = []
     for _ in range(m1):
-        p11 = matrix(GF_q, v * l, v * l)
+        p11 = matrix(GF_ext, v * l, v * l)
         for ni in range(v):
             for nj in range(v):
                 for i1 in range(l):
@@ -288,7 +415,7 @@ def expand_public_asym(seed):
         Pm11.append(p11)
     Pm12 = []
     for _ in range(m1):
-        p12 = matrix(GF_q, v * l, o * l)
+        p12 = matrix(GF_ext, v * l, o * l)
         for ni in range(v):
             for nj in range(o):
                 for i1 in range(l):
@@ -298,7 +425,7 @@ def expand_public_asym(seed):
         Pm12.append(p12)
     Pm21 = []
     for _ in range(m1):
-        p21 = matrix(GF_q, o * l, v * l)
+        p21 = matrix(GF_ext, o * l, v * l)
         for ni in range(o):
             for nj in range(v):
                 for i1 in range(l):
@@ -334,17 +461,17 @@ def compress_p22(pub22):
                     for nj in range(ni + 1, o):
                         for j1 in range(l):
                             res.append(pub22[mi][ni * l + i1, nj * l + j1])
-    pk += compress_gf(res, NUMGF_PK)
+    pk += compress_gf(res, NUMGF_PK * l_qr, ext=True)
     return pk
 
 
 def expand_p22(p22bytes):
     # Expand public key
-    data = expand_gf(p22bytes, NUMGF_PK)
-    P22 = []
+    data = expand_gf(p22bytes, NUMGF_PK * l_qr, ext=True)
     idx = 0
+    P22 = []
     for _ in range(m1):
-        pub22 = matrix(GF_q, o * l, o * l)
+        pub22 = matrix(GF_ext, o * l, o * l)
         for ni in range(o):
             if ASYMMETRIC_PUBMAT:
                 for nj in range(o):
@@ -367,8 +494,27 @@ def expand_p22(p22bytes):
     return P22
 
 
-def gen_ABQ(abqdata):
-    # Generate public ABQ from XOF data
+def decode_sig(sig_bytes):
+    # Decode sig
+    # salt = sig_bytes[-16:]
+    gfsig = expand_gf(sig_bytes[:-16], n * l * r * l_qr, ext=True)
+    if len(gfsig) < n * l * r:
+        raise Exception('Verify failed.')
+    sig = matrix(GF_ext, n * l, r, lambda i, j: gfsig[i * r + j])
+
+    return sig, salt
+
+
+# Generate E matrix
+
+def gen_E(abqdata):
+    if RANDOM_E:
+        NUM_E = m1 * m2 * r**2 * l**2 * l_qr
+        e_bytes = hashlib.shake_256(b'SNOVA_E').digest(NUM_E)
+        e_data = convert_bytes_to_GF(e_bytes)
+        emat = [[[matrix(GF_q, m2 * l_qr, r**2, lambda i, j: e_data[(((a * l + b) * m1 + mi) * m2 * l_qr + i) * r**2 + j])
+                 for a in range(l)] for b in range(l)] for mi in range(m1)]
+        return emat
 
     def create_AB(data, r1, r2):
         # Generate invertible matrices
@@ -393,37 +539,75 @@ def gen_ABQ(abqdata):
     q1 = [nonzero_q(abqdata[o * n_alpha * r * (r + l) + i * l:]) for i in range(o * n_alpha)]
     q2 = [nonzero_q(abqdata[o * n_alpha * r * (r + l) + o * n_alpha * l + i * l:]) for i in range(o * n_alpha)]
 
-    return A, B, q1, q2
-
+    emat = [[[matrix(GF_ext, m2, r**2) for a in range(l)] for b in range(l)] for mi in range(m1)]
+    for mi in range(o):
+        for alpha in range(n_alpha):
+            mia = mi * n_alpha + alpha
+            mi_prime = (mi + alpha) % m1
+            for a in range(l):
+                for b in range(l):
+                    for i1 in range(l):
+                        for i2 in range(r):
+                            for j1 in range(r):
+                                for j2 in range(r):
+                                    emat[mi_prime][a][b][mi * l * r + i1 * r + i2, j1 * r + j2] += \
+                                        A[mia][i2, j1] * q1[mia][a] * q2[mia][b] * B[mia][j2, i1]
+    return emat
 
 ################################################################
 
+
+def QR_proj(x):
+    if l_qr > 1:
+        return x[0]
+    else:
+        return x
+
 # API functions
-# Generate keypair from seed
 
 
 def genkeys(seed):
     # Generate Public key
-    sk_seed = seed[16:]
-    T12 = expand_T12(sk_seed)
+    sk = seed
+    sk_seed = sk[16:]
+    pk_seed = sk[:16]
+    t12data = hashlib.shake_256(sk_seed).digest(2 * o * v * l * l_qr)  # Overdimensioned
 
-    pk_seed = seed[:16]
+    T12 = expand_T12(t12data)
     P11, P12, P21, _ = expand_public(pk_seed)
 
     P22 = [-(T12.transpose() * (P11[mi] * T12 + P12[mi]) + P21[mi] * T12) for mi in range(m1)]
 
-    return seed, pk_seed + compress_p22(P22)
+    return sk, pk_seed + compress_p22(P22)
 
 
 # Sign message
 
 def sign(sk, msg, salt):
-    # Sign message
-    sk_seed = sk[16:]
-    T12 = expand_T12(sk_seed)
+    '''
+    Sign message
 
+    In an alternative but equivalent formulation of QR-UOV, the verify compares a hash
+    to a projected MQ value, projected from GF_ext to GF_q by QR_proj
+
+    To sign, a signature in GF_ext is to be found. This signature in GF_ext can be written in
+    components of GF_q in terms of its coefficients s_{i,k}
+    $signature_i = sum_{k=0}^{l-1} s_{i,k} z^k$
+
+    The coefficients of the A matrix that solves $y = A cdot x$
+    for some vinegar $v$ are then given by $QR_proj(F_{21} cdot v z^k)$
+    The entries of y, A and x are in GF_q. After solving, $x$ has the coefficients s_{i,k}.
+    '''
+
+    sk_seed = sk[16:]
     pk_seed = sk[:16]
+    t12data = hashlib.shake_256(sk_seed).digest(2 * o * v * l * l_qr)  # Overdimensioned
+    m_g = m2 * l_qr
+
+    T12 = expand_T12(t12data)
+
     P11, P12, P21, abqdata = expand_public(pk_seed)
+    emat = gen_E(abqdata)
 
     # Expand private key
     F12 = []
@@ -431,22 +615,6 @@ def sign(sk, msg, salt):
     for mi in range(m1):
         F12.append(P11[mi] * T12 + P12[mi])
         F21.append(T12.transpose() * P11[mi] + P21[mi])
-
-    A, B, q1, q2 = gen_ABQ(abqdata)
-
-    Q1 = []
-    Q2 = []
-
-    for idx in range(o * n_alpha):
-        q1mat = matrix(GF_q, l, l)
-        q2mat = matrix(GF_q, l, l)
-        for ab in range(l):
-            q1mat += q1[idx][ab] * S**ab
-            q2mat += q2[idx][ab] * S**ab
-        Q1.append(q1mat)
-        Q2.append(q2mat)
-
-    msg_hash = hash_combined(msg, pk_seed, salt)
 
     num_sign = 0
     while True:
@@ -457,71 +625,81 @@ def sign(sk, msg, salt):
         # Assign values to vinegar variables
         # Vinegar from sk and salt
 
-        v_state = shake_256(sk_seed + shake_256(msg).digest(64) + salt + num_sign.to_bytes(1))
+        salt_byte = salt
+        msg_hash, msg_bytes = hash_combined(msg, pk_seed, salt_byte)
+        v_state = hashlib.shake_256()
+        v_state.update(sk_seed)
+        if SIGN_DIGEST:
+            dgst = hashlib.shake_256(msg).digest(64)
+            v_state.update(dgst)
+            v_state.update(salt)
+        else:
+            v_state.update(msg_bytes)
+        v_state.update(num_sign.to_bytes(1))
         vinegar_byte = v_state.digest(BYTES_GF(v * l * r))
         vinegar_gf = expand_gf(vinegar_byte, v * l * r)
-        vinegar = matrix(GF_q, v * l, r, lambda i, j: vinegar_gf[i * r + j])
+        vinegar = matrix(GF_ext, v * l, r, lambda i, j: vinegar_gf[i * r + j])
+        rvec = vector(GF_ext, m2 * l_qr)
 
         # Compute the vinegar part of the central map
         p_vin = [[[vinegar.transpose() * S_times_v**b * P11[mi] * S_times_v**a * vinegar
                    for a in range(l)] for b in range(l)] for mi in range(m1)]
 
         # Apply emulsifier
-        temp = [matrix(GF_q, r, l) for mi in range(o)]
-        for mi in range(o):
-            for alpha in range(n_alpha):
-                mia = mi * n_alpha + alpha
-                mi_prime = (mi + alpha) % m1
-                pqq = matrix(GF_q, r, r)
-                for a in range(l):
-                    for b in range(l):
-                        pqq += q1[mia][a] * p_vin[mi_prime][a][b] * q2[mia][b]
-                temp[mi] += A[mia] * pqq * B[mia]
-        F_vv = [temp[mi][i1][j1] for mi in range(o) for j1 in range(l) for i1 in range(r)]
+        res = vector(GF_ext, m_g)
+        for mi in range(m1):
+            for a in range(l):
+                for b in range(l):
+                    vin_vec = vector([p_vin[mi][a][b][i1, j1] for i1 in range(r) for j1 in range(r)])
+                    res += emat[mi][a][b] * vin_vec
+        F_vv = list(res)
 
         # Get msg vinegar part
-        msg_vv = vector([msg_hash[idx] - F_vv[idx] for idx in range(o * l * r)])
+        msg_vv = vector([msg_hash[idx] - QR_proj(F_vv[idx]) for idx in range(m_g)])
 
         # Compute the coefficient matrix of the oil variable
         # compute the coefficients of Xo and put into gauss matrix
-        gauss = matrix(GF_q, o * l * r, o * l * r)
-        for mi in range(o):
-            for alpha in range(n_alpha):
-                mia = mi * n_alpha + alpha
-                mi_prime = (mi + alpha) % m1
+        F21_ab = [[[S_times_o**b * F21[mi] * S_times_v**a * vinegar
+                    for a in range(l)] for b in range(l)] for mi in range(m1)]
+        F12_ab = [[[vinegar.transpose() * S_times_v**b * F12[mi] * S_times_o**a
+                    for a in range(l)] for b in range(l)] for mi in range(m1)]
 
-                Q1_v = matrix.block_diagonal([Q1[mia] for _ in range(v)])
-                Q1_o = matrix.block_diagonal([Q1[mia] for _ in range(o)])
-                Q2_v = matrix.block_diagonal([Q2[mia] for _ in range(v)])
-                Q2_o = matrix.block_diagonal([Q2[mia] for _ in range(o)])
+        A = matrix(GF_ext, m_g, m2 * l_qr)
+        for ti1 in range(m_g):
+            for tj1 in range(o * l):
+                for tj2 in range(r):
+                    for mi_prime in range(m1):
+                        for a in range(l):
+                            for b in range(l):
+                                for k1 in range(r):
+                                    val = \
+                                        emat[mi_prime][a][b][ti1, tj2 * r + k1] \
+                                        * F21_ab[mi_prime][a][b][tj1, k1] \
+                                        + emat[mi_prime][a][b][ti1, k1 * r + tj2] \
+                                        * F12_ab[mi_prime][a][b][k1, tj1]
+                                    for nk in range(l_qr):
+                                        A[ti1, (tj2 * o * l + tj1) * l_qr + nk] += QR_proj(val * z**nk)
 
-                temp1 = Q1_o * (F21[mi_prime] * Q2_v * vinegar) * B[mia]
-                temp2 = A[mia] * (vinegar.transpose() * Q1_v * F12[mi_prime]) * Q2_o
-
-                for idx in range(o):
-                    for ti1 in range(l):
-                        for ti2 in range(r):
-                            for tj1 in range(l):
-                                for tj2 in range(r):
-                                    val = temp1[idx * l + tj1, ti1] * A[mia][ti2, tj2] \
-                                        + temp2[ti2, idx * l + tj1] * B[mia][tj2, ti1]
-                                    gauss[mi * l * r + ti1 * r + ti2, idx * l * r + tj1 * r + tj2] += val
-
-        if gauss.det() == 0:
-            # Try with another vinegar value
+        try:
+            solution = A.solve_right(msg_vv - A * rvec) + rvec
+        except ValueError:
+            # print('no solution', num_sign, file=sys.stderr)
             continue
 
-        solution = gauss.solve_right(msg_vv)
+        if l_qr > 1:
+            solution = [sum([solution[(tj2 * o * l + tj1) * l_qr + nk] * z**nk for nk in range(l_qr)])
+                        for tj1 in range(o * l) for tj2 in range(r)]
+        else:
+            solution = [solution[tj2 * o * l + tj1] for tj1 in range(o * l) for tj2 in range(r)]
 
-        sol_mat = matrix(GF_q, o * l, r, lambda i, j: solution[i * r + j])
+        sol_mat = matrix(GF_ext, o * l, r, lambda i, j: solution[i * r + j])
         vinegar += T12 * sol_mat
         sig_gf = [vinegar[mi * l + i1, j1] for mi in range(v) for i1 in range(l) for j1 in range(r)]
         sig_gf += solution
 
         # Check for symmetric signature
         ok = True
-        if l == r and not ASYMMETRIC_PUBMAT:
-            num_sym = 0
+        if l > 1 and l == r and not ASYMMETRIC_PUBMAT:
             for idx in range(n):
                 is_sym = True
                 for i1 in range(l):
@@ -529,13 +707,11 @@ def sign(sk, msg, salt):
                         if sig_gf[idx * l * r + i1 * r + j1] != sig_gf[idx * l * r + j1 * r + i1]:
                             is_sym = False
                 if is_sym:
-                    num_sym += 1
-            if num_sym > (n // 4 if l == 2 else 0):
-                ok = False
+                    ok = False
         if ok:
             break
 
-    return compress_gf(sig_gf, n * l * r) + salt
+    return compress_gf(sig_gf, n * l * r * l_qr, ext=True) + salt_byte
 
 
 # Verify signature of message
@@ -544,15 +720,10 @@ def verify(pk, sig_bytes, msg):
     # Verify signature of message
 
     # Decode sig
-    salt = sig_bytes[-16:]
-    gfsig = expand_gf(sig_bytes[:-16], n * l * r)
-    if len(gfsig) < n * l * r:
-        raise Exception('Verify failed.')
-    sig = matrix(GF_q, n * l, r, lambda i, j: gfsig[i * r + j])
+    sig, salt = decode_sig(sig_bytes)
 
     # Check for symmetric signature
-    if l == r and not ASYMMETRIC_PUBMAT:
-        num_sym = 0
+    if l > 1 and l == r and not ASYMMETRIC_PUBMAT:
         for idx in range(n):
             is_sym = True
             for i1 in range(l):
@@ -560,36 +731,31 @@ def verify(pk, sig_bytes, msg):
                     if sig[idx * l + i1, j1] != sig[idx * l + j1, i1]:
                         is_sym = False
             if is_sym:
-                num_sym += 1
-        if num_sym > (n // 4 if l == 2 else 0):
-            raise Exception('Verify failed!')
+                raise Exception('Verify failed!')
 
     # Expand pubkey
     pk_seed = pk[:16]
     P11, P12, P21, abqdata = expand_public(pk_seed)
     P22 = expand_p22(pk[16:])
     P = [matrix.block([[P11[mi], P12[mi]], [P21[mi], P22[mi]]]) for mi in range(m1)]
-    A, B, q1, q2 = gen_ABQ(abqdata)
 
     # Whip-up signature
     p_sig = [[[sig.transpose() * S_times_n**b * P[mi] * S_times_n**a * sig
                for a in range(l)] for b in range(l)] for mi in range(m1)]
 
     # Apply emulsifier
-    temp = [matrix(GF_q, r, l) for mi in range(o)]
-    for mi in range(o):
-        for alpha in range(n_alpha):
-            mia = mi * n_alpha + alpha
-            mi_prime = (mi + alpha) % m1
-            pqq = matrix(GF_q, r, r)
-            for a in range(l):
-                for b in range(l):
-                    pqq += q1[mia][a] * p_sig[mi_prime][a][b] * q2[mia][b]
-            temp[mi] += A[mia] * pqq * B[mia]
-    sig_hash = [temp[mi][i1][j1] for mi in range(o) for j1 in range(l) for i1 in range(r)]
+    emat = gen_E(abqdata)
+
+    res = vector(GF_ext, emat[0][0][0].nrows())
+    for mi in range(m1):
+        for a in range(l):
+            for b in range(l):
+                sig_vec = vector([p_sig[mi][a][b][i1, j1] for i1 in range(r) for j1 in range(r)])
+                res += emat[mi][a][b] * sig_vec
+    sig_hash = [QR_proj(val) for val in res]
 
     # Check against expected hash
-    msg_hash = hash_combined(msg, pk_seed, salt)
+    msg_hash, _ = hash_combined(msg, pk_seed, salt)
 
     if msg_hash != sig_hash:
         raise Exception('Verify failed')
@@ -597,21 +763,24 @@ def verify(pk, sig_bytes, msg):
 
 ################################################################
 
+
 # Generate KATs
 entropy_input = bytearray(48)
 for i in range(48):
     entropy_input[i] = i
-drbg = nistrng.rng(entropy_input)
+drbg = rng(entropy_input)
+srbdg = rng(entropy_input)
 
-print('# SNOVA', v, o, q, l, 'AES' if aes else 'SHAKE', r, m1, n_alpha)
+print('# TSUOV', v, o, q, l, l_qr, ' / ', r, m1, m2 * l_qr)
 print()
 
 for count in range(1):
     seed = drbg.random_bytes(48)
-    srbdg = nistrng.rng(seed)
+    srbdg = rng(seed)
 
     keygen_seed = srbdg.random_bytes(48)
     salt = srbdg.random_bytes(16)
+
     mlen = 33 * (count + 1)
     msg = drbg.random_bytes(mlen)
 
