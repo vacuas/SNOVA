@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Optimized q=16 implementation
+ * Optimized q=16 implementation. Uses GFNI if available and rectangular signature.
  *
  * Copyright (c) 2026 SNOVA TEAM
  */
@@ -13,6 +13,7 @@
 #if __AVX2__
 #include <immintrin.h>
 #endif
+#define USE_GFNI (USE_AVX2 && __GFNI__ && (SNOVA_r != SNOVA_l))
 
 #include <stdalign.h>
 #include <stdint.h>
@@ -1145,6 +1146,12 @@ int SNOVA_NAMESPACE(pk_expand)(expanded_PK* pkx, const uint8_t* pk) {
 	return 0;
 }
 
+#if USE_GFNI
+#define SNOVA_gflr16 ((SNOVA_lr + 31) / 32)
+#define SNOVA_gflr32 (SNOVA_gflr16 * 32)
+#else
+#define SNOVA_gflr32 (SNOVA_lr)
+#endif
 /**
  * Optimized version of verify.
  */
@@ -1159,85 +1166,104 @@ int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const ui
 	/**
 	 * Whip signature
 	 */
-	alignas(32) uint16_t whipped_sig[SNOVA_l * SNOVA_n * SNOVA_lr32] = {0};
+	alignas(32) uint16_t whipped_sig[SNOVA_l * SNOVA_n * SNOVA_gflr32] = {0};
+	alignas(32) uint8_t whipped_sig2[SNOVA_l * SNOVA_n * SNOVA_gflr32] = {0};
 
 	for (int ab = 0; ab < SNOVA_l; ++ab)
 		for (int idx = 0; idx < SNOVA_n; ++idx)
 			for (int i1 = 0; i1 < SNOVA_l; i1++)
 				for (int j1 = 0; j1 < SNOVA_r; j1++)
 					for (int k1 = 0; k1 < SNOVA_l; k1++)
-						whipped_sig[idx * SNOVA_l * SNOVA_lr32 + i1 * SNOVA_lr32 + ab * SNOVA_r + j1] ^=
+						whipped_sig[idx * SNOVA_l * SNOVA_gflr32 + i1 * SNOVA_gflr32 + ab * SNOVA_r + j1] ^=
 						    gf_Sx[ab * SNOVA_l2 + i1 * SNOVA_l + k1] * signature_in_GF[idx * SNOVA_lr + k1 * SNOVA_r + j1];
 
-	for (int i1 = 0; i1 < SNOVA_l * SNOVA_n * SNOVA_lr32; i1++) {
-		whipped_sig[i1] = gf16_cleanup(whipped_sig[i1]);
+	for (int i1 = 0; i1 < SNOVA_l * SNOVA_n * SNOVA_gflr32; i1++) {
+		whipped_sig2[i1] = gf16_compress(whipped_sig[i1]);
+		whipped_sig[i1] = gf16_expand(whipped_sig2[i1]);
 	}
 
 	/**
 	 * Evaluate whipped central map
 	 */
 	uint16_t hash_in_GF[SNOVA_o * SNOVA_lr] = {0};
-	alignas(32) uint16_t sum_t1[SNOVA_m1 * SNOVA_l * SNOVA_r * SNOVA_lr32] = {0};
-	alignas(32) uint16_t sum_t1s[SNOVA_m1 * SNOVA_l2 * SNOVA_r2] = {0};
+	alignas(32) uint16_t sum_t1s[SNOVA_m1 * SNOVA_l * SNOVA_r * SNOVA_gflr32] = {0};
 
+#if USE_GFNI
+	alignas(32) uint8_t sum_t1[SNOVA_m1 * SNOVA_l * SNOVA_r * SNOVA_gflr32] = {0};
 	for (int mi = 0; mi < SNOVA_m1; ++mi) {
-		for (int ni = 0; ni < SNOVA_n; ++ni) {
-			alignas(32) uint16_t sum_t0[SNOVA_l * SNOVA_lr32] = {0};
-			// Right
-#if USE_AVX2
+		// Right
+		alignas(32) uint8_t sum_t0[SNOVA_n * SNOVA_l * SNOVA_gflr32] = {0};
+		for (int ni = 0; ni < SNOVA_n; ++ni)
 			for (int nj = 0; nj < SNOVA_n; ++nj)
 				for (int i1 = 0; i1 < SNOVA_l; i1++)
-					for (int b1 = 0; b1 < SNOVA_lr16; ++b1)
-						for (int k1 = 0; k1 < SNOVA_l; k1++) {
-							__m256i* sum0_256 = (__m256i*)&sum_t0[i1 * SNOVA_lr32];
+					for (int k1 = 0; k1 < SNOVA_l; k1++)
+						for (int b1 = 0; b1 < SNOVA_gflr16; ++b1) {
+							__m256i* sum0_256 = (__m256i*)&sum_t0[(ni * SNOVA_l + i1) * SNOVA_gflr32];
 							__m256i q1_256 =
-							    _mm256_set1_epi16(pkx->P[((mi * SNOVA_n + ni) * SNOVA_n + nj) * SNOVA_l2 + i1 * SNOVA_l + k1]);
-							__m256i* wip_256 = (__m256i*)&whipped_sig[nj * SNOVA_l * SNOVA_lr32 + k1 * SNOVA_lr32];
+							    _mm256_set1_epi8(pkx->P[((mi * SNOVA_n + ni) * SNOVA_n + nj) * SNOVA_l2 + i1 * SNOVA_l + k1]);
+							__m256i* wip_256 = (__m256i*)&whipped_sig2[nj * SNOVA_l * SNOVA_gflr32 + k1 * SNOVA_gflr32];
 
-							sum0_256[b1] ^= _mm256_mullo_epi16(q1_256, wip_256[b1]);
+							sum0_256[b1] ^= _mm256_gf2p8mul_epi8(q1_256, wip_256[b1]);
 						}
-#else
-			for (int nj = 0; nj < SNOVA_n; ++nj)
-				for (int b1 = 0; b1 < SNOVA_lr32; ++b1)
-					for (int i1 = 0; i1 < SNOVA_l; i1++)
-						for (int k1 = 0; k1 < SNOVA_l; k1++)
-							sum_t0[i1 * SNOVA_lr32 + b1] ^=
-							    pkx->P[((mi * SNOVA_n + ni) * SNOVA_n + nj) * SNOVA_l2 + i1 * SNOVA_l + k1] *
-							    whipped_sig[nj * SNOVA_l * SNOVA_lr32 + k1 * SNOVA_lr32 + b1];
-#endif
 
-			for (int i1 = 0; i1 < SNOVA_l * SNOVA_lr32; ++i1) {
+		for (int i1 = 0; i1 < SNOVA_n * SNOVA_l * SNOVA_gflr32; ++i1) {
+			uint8_t val = sum_t0[i1];
+			sum_t0[i1] = (val ^ ((val & 0xf0) >> 3) ^ (val >> 4)) & 0xf;
+		}
+
+		// Left, transposed whipped_sig
+		for (int ni = 0; ni < SNOVA_n; ++ni)
+			for (int a1 = 0; a1 < SNOVA_l; ++a1)
+				for (int k1 = 0; k1 < SNOVA_l; k1++)
+					for (int i1 = 0; i1 < SNOVA_r; i1++)
+						for (int b1 = 0; b1 < SNOVA_gflr16; ++b1) {
+							__m256i* sum1_256 =
+							    (__m256i*)&sum_t1[(mi * SNOVA_l + a1) * SNOVA_r * SNOVA_gflr32 + i1 * SNOVA_gflr32];
+							__m256i wip_256 = _mm256_set1_epi8(
+							                      whipped_sig2[ni * SNOVA_l * SNOVA_gflr32 + k1 * SNOVA_gflr32 + a1 * SNOVA_r + i1]);
+							__m256i* sum0_256 = (__m256i*)&sum_t0[(ni * SNOVA_l + k1) * SNOVA_gflr32];
+
+							sum1_256[b1] ^= _mm256_gf2p8mul_epi8(wip_256, sum0_256[b1]);
+						}
+	}
+
+	for (int i1 = 0; i1 < SNOVA_m1 * SNOVA_l * SNOVA_r * SNOVA_gflr32; ++i1) {
+		uint8_t val = sum_t1[i1];
+		sum_t1[i1] = (val ^ ((val & 0xf0) >> 3) ^ (val >> 4)) & 0xf;
+	}
+#else
+	alignas(32) uint16_t sum_t1[SNOVA_m1 * SNOVA_l * SNOVA_r * SNOVA_gflr32] = {0};
+	for (int mi = 0; mi < SNOVA_m1; ++mi) {
+		// Right
+		for (int ni = 0; ni < SNOVA_n; ++ni) {
+			alignas(32) uint16_t sum_t0[SNOVA_n * SNOVA_l * SNOVA_gflr32] = {0};
+			for (int nj = 0; nj < SNOVA_n; ++nj)
+				for (int k1 = 0; k1 < SNOVA_l; k1++)
+					for (int i1 = 0; i1 < SNOVA_l; i1++)
+						for (int b1 = 0; b1 < SNOVA_lr; ++b1)
+							sum_t0[i1 * SNOVA_lr + b1] ^=
+							    pkx->P[((mi * SNOVA_n + ni) * SNOVA_n + nj) * SNOVA_l2 + i1 * SNOVA_l + k1] *
+							    whipped_sig[nj * SNOVA_l * SNOVA_lr + k1 * SNOVA_lr + b1];
+
+			for (int i1 = 0; i1 < SNOVA_l * SNOVA_lr; ++i1) {
 				sum_t0[i1] = gf16_compress(sum_t0[i1]);
 			}
 
 			// Left, transposed whipped_sig
-#if USE_AVX2
-			for (int a1 = 0; a1 < SNOVA_l; ++a1)
-				for (int k1 = 0; k1 < SNOVA_l; k1++)
-					for (int i1 = 0; i1 < SNOVA_r; i1++)
-						for (int b1 = 0; b1 < SNOVA_lr16; ++b1) {
-							__m256i* sum0_256 = (__m256i*)&sum_t0[k1 * SNOVA_lr32];
-							__m256i* sum1_256 = (__m256i*)&sum_t1[(mi * SNOVA_l + a1) * SNOVA_r * SNOVA_lr32 + i1 * SNOVA_lr32];
-							__m256i wip_256 =
-							    _mm256_set1_epi16(whipped_sig[ni * SNOVA_l * SNOVA_lr32 + k1 * SNOVA_lr32 + a1 * SNOVA_r + i1]);
-
-							sum1_256[b1] ^= _mm256_mullo_epi16(wip_256, sum0_256[b1]);
-						}
-#else
 			for (int a1 = 0; a1 < SNOVA_l; ++a1)
 				for (int k1 = 0; k1 < SNOVA_l; k1++)
 					for (int i1 = 0; i1 < SNOVA_r; i1++)
 						for (int b1 = 0; b1 < SNOVA_lr; ++b1)
-							sum_t1[(mi * SNOVA_l + a1) * SNOVA_r * SNOVA_lr32 + i1 * SNOVA_lr32 + b1] ^=
-							    whipped_sig[ni * SNOVA_l * SNOVA_lr32 + k1 * SNOVA_lr32 + a1 * SNOVA_r + i1] *
-							    sum_t0[k1 * SNOVA_lr32 + b1];
-#endif
+							sum_t1[(mi * SNOVA_l + a1) * SNOVA_l * SNOVA_r2 + i1 * SNOVA_lr + b1] ^=
+							    whipped_sig[ni * SNOVA_l * SNOVA_lr + k1 * SNOVA_lr + a1 * SNOVA_r + i1] *
+							    sum_t0[k1 * SNOVA_lr + b1];
 		}
 	}
 
-	for (int i1 = 0; i1 < SNOVA_m1 * SNOVA_l * SNOVA_r * SNOVA_lr32; i1++) {
+	for (int i1 = 0; i1 < SNOVA_m1 * SNOVA_l * SNOVA_r * SNOVA_gflr32; i1++) {
 		sum_t1[i1] = gf16_compress(sum_t1[i1]);
 	}
+#endif
 
 	for (int mi = 0; mi < SNOVA_m1; ++mi)
 		for (int a1 = 0; a1 < SNOVA_l; ++a1)
@@ -1245,7 +1271,7 @@ int SNOVA_NAMESPACE(verify)(const expanded_PK* pkx, const uint8_t* sig, const ui
 				for (int b1 = 0; b1 < SNOVA_l; ++b1)
 					for (int j1 = 0; j1 < SNOVA_r; j1++)
 						sum_t1s[(mi * SNOVA_l + a1) * SNOVA_l * SNOVA_r2 + b1 * SNOVA_r2 + i1 * SNOVA_r + j1] =
-						    sum_t1[(mi * SNOVA_l + a1) * SNOVA_r * SNOVA_lr32 + i1 * SNOVA_lr32 + b1 * SNOVA_r + j1];
+						    sum_t1[(mi * SNOVA_l + a1) * SNOVA_r * SNOVA_gflr32 + i1 * SNOVA_gflr32 + b1 * SNOVA_r + j1];
 
 	/**
 	 * Prepare
